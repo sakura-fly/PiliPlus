@@ -40,7 +40,7 @@ on:
         type: boolean
 
       tag:
-        description: "Release Tag"
+        description: "tag"
         required: false
         default: ""
         type: string
@@ -51,6 +51,8 @@ jobs:
     name: Release Android
     runs-on: ubuntu-latest
     permissions: write-all
+    outputs:
+      auto_tag: ${{ steps.auto_tag.outputs.auto_tag }}
 
     steps:
       - name: 代码迁出
@@ -82,6 +84,7 @@ jobs:
         continue-on-error: true
 
       - name: Write key
+        if: github.event_name == 'workflow_dispatch'
         run: |
           if [ ! -z "${{ secrets.SIGN_KEYSTORE_BASE64 }}" ]; then
             echo "${{ secrets.SIGN_KEYSTORE_BASE64 }}" | base64 --decode > android/app/key.jks
@@ -92,11 +95,25 @@ jobs:
           fi
 
       - name: Set and Extract version
+        if: ${{ github.event_name == 'workflow_dispatch' }}
         shell: pwsh
         run: lib/scripts/build.ps1 android
 
       - name: Flutter Build Release Apk
+        if: ${{ github.event_name == 'workflow_dispatch' }}
         run: flutter build apk --release --split-per-abi --dart-define-from-file=pili_release.json --pub
+
+      - name: Flutter Build Dev Apk
+        if: ${{ github.event_name == 'push' }}
+        run: |
+          flutter build apk --release --split-per-abi --android-project-arg dev=1 --pub
+
+      # 自动生成版本号 TAG（不改动文件名）
+      - name: Generate auto tag
+        id: auto_tag
+        run: |
+          VERSION=$(grep 'version:' pubspec.yaml | head -n1 | awk '{print $2}' | cut -d'+' -f1)
+          echo "auto_tag=v$VERSION" >> $GITHUB_OUTPUT
 
       - name: Rename
         run: |
@@ -106,11 +123,13 @@ jobs:
           done
         shell: bash
 
+      # 使用自动生成的 tag
       - name: Release
+        if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'push' }}
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.event.inputs.tag || format('build-{0}', github.sha) }}
-          name: ${{ github.event.inputs.tag || format('Auto Build {0}', github.sha) }}
+          tag_name: ${{ github.event.inputs.tag || steps.auto_tag.outputs.auto_tag }}
+          name: ${{ github.event.inputs.tag || steps.auto_tag.outputs.auto_tag }}
           files: PiliPlus_android_*.apk
 
       - name: 上传
@@ -139,25 +158,25 @@ jobs:
     uses: ./.github/workflows/ios.yml
     permissions: write-all
     with:
-      tag: ${{ github.event.inputs.tag || format('build-{0}', github.sha) }}
+      tag: ${{ github.event.inputs.tag || needs.android.outputs.auto_tag }}
 
   mac:
     if: ${{ (github.event_name == 'push' && github.repository == 'sakura-fly/PiliPlus') || github.event.inputs.build_mac == 'true' }}
     uses: ./.github/workflows/mac.yml
     permissions: write-all
     with:
-      tag: ${{ github.event.inputs.tag || format('build-{0}', github.sha) }}
+      tag: ${{ github.event.inputs.tag || needs.android.outputs.auto_tag }}
 
   win_x64:
     if: ${{ (github.event_name == 'push' && github.repository == 'sakura-fly/PiliPlus') || github.event.inputs.build_win_x64 == 'true' }}
     uses: ./.github/workflows/win_x64.yml
     permissions: write-all
     with:
-      tag: ${{ github.event.inputs.tag || format('build-{0}', github.sha) }}
+      tag: ${{ github.event.inputs.tag || needs.android.outputs.auto_tag }}
 
   linux_x64:
     if: ${{ (github.event_name == 'push' && github.repository == 'sakura-fly/PiliPlus') || github.event.inputs.build_linux_x64 == 'true' }}
     uses: ./.github/workflows/linux_x64.yml
     permissions: write-all
     with:
-      tag: ${{ github.event.inputs.tag || format('build-{0}', github.sha) }}
+      tag: ${{ github.event.inputs.tag || needs.android.outputs.auto_tag }}
