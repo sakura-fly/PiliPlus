@@ -131,7 +131,7 @@ abstract final class Update {
             final String name = i['name'];
             if (name.contains(plat) &&
                 (ext == null || ext.isEmpty ? true : name.endsWith(ext))) {
-              PageUtils.launchURL(i['browser_download_url']);
+              PageUtils.launchURL('https://gh-proxy.org/' + i['browser_download_url']);
               return;
             }
           }
