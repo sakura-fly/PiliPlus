@@ -21,7 +21,8 @@ try {
             $line
         }
     }
-
+#     打印
+    Write-Host "version: $versionName+$versionCode"
     if ($null -eq $versionName) {
         throw 'version not found'
     }
