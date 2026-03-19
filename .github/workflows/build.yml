@@ -46,13 +46,14 @@ on:
 
 jobs:
   auto_tag:
+    if: ${{ github.event_name == 'push' }}
     name: auto tag
     runs-on: ubuntu-latest
+    permissions: write-all
     outputs:
       auto_tag: ${{ steps.auto_tag.outputs.auto_tag }}
     steps:
       - name: Set and Extract version
-        if: ${{ github.event_name == 'push' }}
         shell: pwsh
         run: lib/scripts/build.ps1 android
       - name: Generate auto tag
