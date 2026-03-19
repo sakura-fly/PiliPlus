@@ -61,13 +61,13 @@ jobs:
 
       - name: Apply Patch
         shell: pwsh
-        run: lib/scripts/patch.ps1 android
+        run: lib/scripts/patch.ps1 linux
         continue-on-error: true
 
 
       - name: Set and Extract version
         shell: pwsh
-        run: lib/scripts/build.ps1 android
+        run: lib/scripts/build.ps1 linux
 
       - name: Generate auto tag
         id: auto_tag
