@@ -74,7 +74,6 @@ jobs:
           
           echo '$GITHUB_OUTPUT: '$GITHUB_OUTPUT
           echo '$VERSION: '$VERSION
-#          打印 env.version
           echo '::set-output name=version::$VERSION'
 
 
