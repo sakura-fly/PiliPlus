@@ -69,10 +69,10 @@ jobs:
         id: auto_tag
         run: |
           VERSION=env.version
-          echo "auto_tag=v$VERSION" >> $GITHUB_OUTPUT
-          echo '$GITHUB_OUTPUT:'$GITHUB_OUTPUT
-          echo '$VERSION:'$VERSION  
-          echo 'env.version:'$env.version  
+          echo "auto_tag=v$VERSION " >> $GITHUB_OUTPUT
+          echo '$GITHUB_OUTPUT: '$GITHUB_OUTPUT
+          echo '$VERSION: '$VERSION  
+          echo 'env.version: '$env.version  
 
 
 
