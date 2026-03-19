@@ -74,8 +74,8 @@ jobs:
         run: |
           VERSION=$(grep 'version:' pubspec.yaml | head -n1 | awk '{print $2}' | cut -d'+' -f1)
           echo "auto_tag=v$VERSION" >> $GITHUB_OUTPUT
-#          打印 $GITHUB_OUTPUT
           echo $GITHUB_OUTPUT
+          echo v$VERSION  
 
 
 
