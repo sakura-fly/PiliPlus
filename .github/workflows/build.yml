@@ -47,7 +47,7 @@ on:
 jobs:
   auto_tag:
     name: auto tag
-    runs-on: debian-latest
+    runs-on: ubuntu-latest
     outputs:
       auto_tag: ${{ steps.auto_tag.outputs.auto_tag }}
     steps:
