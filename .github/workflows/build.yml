@@ -54,6 +54,11 @@ jobs:
       auto_tag: ${{ steps.auto_tag.outputs.auto_tag }}
     steps:
 
+      - name: 代码迁出
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
       - name: Apply Patch
         shell: pwsh
         run: lib/scripts/patch.ps1 android
