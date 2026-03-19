@@ -106,7 +106,11 @@ jobs:
 #        if: ${{ github.event_name == 'push' }}
 #        run: |
 #          flutter build apk --release --split-per-abi --android-project-arg dev=1 --pub
-
+      - name: Generate auto tag
+        id: auto_tag
+        run: |
+          VERSION=$(grep 'version:' pubspec.yaml | head -n1 | awk '{print $2}' | cut -d'+' -f1)
+          echo "auto_tag=v$VERSION" >> $GITHUB_OUTPUT
       - name: Rename
         run: |
           for file in build/app/outputs/flutter-apk/app-*-release.apk; do
