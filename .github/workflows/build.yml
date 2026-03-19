@@ -68,8 +68,6 @@ jobs:
       - name: Generate auto tag
         id: auto_tag
         run: |
-          lib/scripts/build.ps1 Linux
-          VERSION=$(grep 'version:' pubspec.yaml | head -n1 | awk '{print $2}' | cut -d'+' -f1)
           echo "auto_tag=v$VERSION " >> $GITHUB_OUTPUT
           
           
