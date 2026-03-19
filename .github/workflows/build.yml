@@ -59,10 +59,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Apply Patch
-        shell: pwsh
-        run: lib/scripts/patch.ps1 linux
-        continue-on-error: true
 
 
       - name: Set and Extract version
@@ -74,9 +70,9 @@ jobs:
         run: |
           VERSION=env.version
           echo "auto_tag=v$VERSION" >> $GITHUB_OUTPUT
-          echo '$GITHUB_OUTPUT'$GITHUB_OUTPUT
-          echo '$VERSION'$VERSION  
-          echo 'env.version'$.version  
+          echo '$GITHUB_OUTPUT:'$GITHUB_OUTPUT
+          echo '$VERSION:'$VERSION  
+          echo 'env.version:'$env.version  
 
 
 
