@@ -6,7 +6,6 @@ on:
       - release
     paths-ignore:
       - "**.md"
-
   workflow_dispatch:
     inputs:
       build_android:
@@ -34,7 +33,7 @@ on:
         type: boolean
 
       build_linux_x64:
-        description: "Linux-x64"
+        description: "Build Linux-x64"
         required: false
         default: true
         type: boolean
@@ -95,25 +94,18 @@ jobs:
           fi
 
       - name: Set and Extract version
-        if: ${{ github.event_name == 'workflow_dispatch' }}
+        if: ${{ github.event_name == 'push' }}
         shell: pwsh
         run: lib/scripts/build.ps1 android
 
       - name: Flutter Build Release Apk
-        if: ${{ github.event_name == 'workflow_dispatch' }}
-        run: flutter build apk --release --split-per-abi --dart-define-from-file=pili_release.json --pub
-
-      - name: Flutter Build Dev Apk
         if: ${{ github.event_name == 'push' }}
-        run: |
-          flutter build apk --release --split-per-abi --android-project-arg dev=1 --pub
-
-      # 自动生成版本号 TAG（不改动文件名）
-      - name: Generate auto tag
-        id: auto_tag
-        run: |
-          VERSION=$(grep 'version:' pubspec.yaml | head -n1 | awk '{print $2}' | cut -d'+' -f1)
-          echo "auto_tag=v$VERSION" >> $GITHUB_OUTPUT
+        run: flutter build apk --release --split-per-abi --dart-define-from-file=pili_release.json --pub
+#
+#      - name: Flutter Build Dev Apk
+#        if: ${{ github.event_name == 'push' }}
+#        run: |
+#          flutter build apk --release --split-per-abi --android-project-arg dev=1 --pub
 
       - name: Rename
         run: |
@@ -123,7 +115,6 @@ jobs:
           done
         shell: bash
 
-      # 使用自动生成的 tag
       - name: Release
         if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'push' }}
         uses: softprops/action-gh-release@v2
@@ -158,25 +149,25 @@ jobs:
     uses: ./.github/workflows/ios.yml
     permissions: write-all
     with:
-      tag: ${{ github.event.inputs.tag || needs.android.outputs.auto_tag }}
+      tag: ${{ github.event_name == 'workflow_dispatch' || needs.android.outputs.auto_tag}}
 
   mac:
     if: ${{ (github.event_name == 'push' && github.repository == 'sakura-fly/PiliPlus') || github.event.inputs.build_mac == 'true' }}
     uses: ./.github/workflows/mac.yml
     permissions: write-all
     with:
-      tag: ${{ github.event.inputs.tag || needs.android.outputs.auto_tag }}
+      tag: ${{ github.event_name == 'workflow_dispatch' || needs.android.outputs.auto_tag}}
 
   win_x64:
     if: ${{ (github.event_name == 'push' && github.repository == 'sakura-fly/PiliPlus') || github.event.inputs.build_win_x64 == 'true' }}
     uses: ./.github/workflows/win_x64.yml
     permissions: write-all
     with:
-      tag: ${{ github.event.inputs.tag || needs.android.outputs.auto_tag }}
+      tag: ${{ github.event_name == 'workflow_dispatch' || needs.android.outputs.auto_tag}}
 
   linux_x64:
     if: ${{ (github.event_name == 'push' && github.repository == 'sakura-fly/PiliPlus') || github.event.inputs.build_linux_x64 == 'true' }}
     uses: ./.github/workflows/linux_x64.yml
     permissions: write-all
     with:
-      tag: ${{ github.event.inputs.tag || needs.android.outputs.auto_tag }}
+      tag: ${{ github.event_name == 'workflow_dispatch' || needs.android.outputs.auto_tag}}
