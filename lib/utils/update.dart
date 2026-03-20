@@ -39,7 +39,7 @@ abstract final class Update {
           DateTime.parse(data['published_at']).millisecondsSinceEpoch ~/ 1000;
       if (BuildConfig.buildTime >= latest) {
         if (!isAuto) {
-          SmartDialog.showToast('已是最新版本: $latest, 当前版本: ${BuildConfig.buildTime}');
+          SmartDialog.showToast('已是最新版本: $latest, 当前版本:  ${BuildConfig.buildTime}');
         }
       } else {
         SmartDialog.show(
