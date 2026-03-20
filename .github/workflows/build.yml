@@ -150,6 +150,7 @@ jobs:
           tag_name: ${{ github.event.inputs.tag || needs.auto_tag.outputs.auto_tag }}
           name: ${{ github.event.inputs.tag || needs.auto_tag.outputs.auto_tag }}
           files: PiliPlus_android_*.apk
+          target_commitish: ${{ github.sha }}
 
       - name: 上传
         uses: actions/upload-artifact@v7
