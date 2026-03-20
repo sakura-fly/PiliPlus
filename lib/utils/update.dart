@@ -36,10 +36,10 @@ abstract final class Update {
       }
       final data = res.data[0];
       final int latest =
-          DateTime.parse(data['created_at']).millisecondsSinceEpoch ~/ 1000;
+          DateTime.parse(data['published_at']).millisecondsSinceEpoch ~/ 1000;
       if (BuildConfig.buildTime >= latest) {
         if (!isAuto) {
-          SmartDialog.showToast('已是最新版本');
+          SmartDialog.showToast('已是最新版本: $latest, 当前版本: ${BuildConfig.buildTime}');
         }
       } else {
         SmartDialog.show(
