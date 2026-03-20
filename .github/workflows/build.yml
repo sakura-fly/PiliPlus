@@ -115,7 +115,6 @@ jobs:
         run: lib/scripts/build.ps1 android
 
       - name: Write key
-        if: github.event_name == 'workflow_dispatch'
         run: |
           if [ ! -z "${{ secrets.SIGN_KEYSTORE_BASE64 }}" ]; then
             echo "${{ secrets.SIGN_KEYSTORE_BASE64 }}" | base64 --decode > android/app/key.jks
