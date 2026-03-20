@@ -68,7 +68,7 @@ jobs:
       - name: Generate auto tag
         id: auto_tag
         run: |
-          echo "auto_tag=v${{ env.version }} " >> $GITHUB_OUTPUT
+          echo "auto_tag=v${{ env.version }}" >> $GITHUB_OUTPUT
           
           
 
