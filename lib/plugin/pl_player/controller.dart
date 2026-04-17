@@ -49,13 +49,14 @@ import 'package:easy_debounce/easy_throttle.dart';
 import 'package:floating/floating.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show HapticFeedback;
+import 'package:flutter/services.dart' show HapticFeedback, DeviceOrientation;
 import 'package:flutter_smart_dialog/flutter_smart_dialog.dart';
 import 'package:flutter_volume_controller/flutter_volume_controller.dart';
 import 'package:get/get.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
+import 'package:native_device_orientation/native_device_orientation.dart';
 import 'package:path/path.dart' as path;
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:window_manager/window_manager.dart';
@@ -513,26 +514,85 @@ class PlPlayerController with BlockConfigMixin {
 
   Box video = GStorage.video;
 
+  bool visible = true;
+
+  DeviceOrientation? _orientation;
+  late final checkIsAutoRotate = Platform.isAndroid && mode != .gravity;
+  StreamSubscription<OrientationParams>? _orientationListener;
+
+  void _stopOrientationListener() {
+    _orientationListener?.cancel();
+    _orientationListener = null;
+  }
+
+  void _onOrientationChanged(OrientationParams param) {
+    if (!visible) return;
+    final orientation = _orientation = param.orientation;
+    final isFullScreen = this.isFullScreen.value;
+    if (checkIsAutoRotate &&
+        param.isAutoRotate != true &&
+        (!isFullScreen ||
+            _isVertical ||
+            orientation == .portraitUp ||
+            orientation == .portraitDown)) {
+      return;
+    }
+    switch (orientation) {
+      case .portraitUp:
+        if (!_isVertical && controlsLock.value) return;
+        if (!horizontalScreen && !_isVertical && isFullScreen) {
+          if (!isManualFS) {
+            triggerFullScreen(status: false, orientation: orientation);
+          }
+        } else {
+          portraitUpMode();
+        }
+      case .portraitDown:
+        if (!horizontalScreen) return;
+        if (!_isVertical && controlsLock.value) return;
+        portraitDownMode();
+      case .landscapeLeft:
+        if (!horizontalScreen && !isFullScreen) {
+          triggerFullScreen(orientation: orientation, isManualFS: false);
+        } else {
+          landscapeLeftMode();
+        }
+      case .landscapeRight:
+        if (!horizontalScreen && !isFullScreen) {
+          triggerFullScreen(orientation: orientation, isManualFS: false);
+        } else {
+          landscapeRightMode();
+        }
+    }
+  }
+
   // 添加一个私有构造函数
   PlPlayerController._() {
+    if (PlatformUtils.isMobile) {
+      _orientationListener = NativeDeviceOrientationPlatform.instance
+          .onOrientationChanged(
+            useSensor: Platform.isAndroid,
+            checkIsAutoRotate: checkIsAutoRotate,
+          )
+          .listen(_onOrientationChanged);
+    }
+
     if (!Accounts.heartbeat.isLogin || Pref.historyPause) {
       enableHeart = false;
     }
 
     if (Platform.isAndroid && autoPiP) {
-      Utils.sdkInt.then((sdkInt) {
-        if (sdkInt < 36) {
-          Utils.channel.setMethodCallHandler((call) async {
-            if (call.method == 'onUserLeaveHint') {
-              if (playerStatus.isPlaying && _isCurrVideoPage) {
-                enterPip();
-              }
+      if (Utils.sdkInt < 36) {
+        Utils.channel.setMethodCallHandler((call) async {
+          if (call.method == 'onUserLeaveHint') {
+            if (playerStatus.isPlaying && _isCurrVideoPage) {
+              enterPip();
             }
-          });
-        } else {
-          _shouldSetPip = true;
-        }
-      });
+          }
+        });
+      } else {
+        _shouldSetPip = true;
+      }
     }
   }
 
@@ -1360,69 +1420,74 @@ class PlPlayerController with BlockConfigMixin {
     updateSubtitleStyle();
   }
 
-  late bool isManualFS = true;
+  double screenRatio = 0.0;
+  bool isManualFS = true;
   late final FullScreenMode mode = Pref.fullScreenMode;
   late final horizontalScreen = Pref.horizontalScreen;
 
   // 全屏
-  bool fsProcessing = false;
+  bool _fsProcessing = false;
   Future<void> triggerFullScreen({
     bool status = true,
     bool inAppFullScreen = false,
+    DeviceOrientation? orientation,
     bool isManualFS = true,
-    FullScreenMode? mode,
   }) async {
     if (isDesktopPip) return;
     if (isFullScreen.value == status) return;
 
-    if (fsProcessing) {
-      return;
-    }
-    fsProcessing = true;
+    if (_fsProcessing) return;
+    _fsProcessing = true;
     toggleFullScreen(status);
+    this.isManualFS = isManualFS;
     try {
-      mode ??= this.mode;
-      this.isManualFS = isManualFS;
-
       if (status) {
         if (PlatformUtils.isMobile) {
           hideStatusBar();
-          if (mode == FullScreenMode.none) {
+          if (orientation == null && mode == .none) {
             return;
           }
-          if (mode == FullScreenMode.gravity) {
-            await fullAutoModeForceSensor();
-            return;
-          }
-          late final size = MediaQuery.sizeOf(Get.context!);
-          if ((mode == FullScreenMode.vertical ||
-              (mode == FullScreenMode.auto && isVertical) ||
-              (mode == FullScreenMode.ratio &&
-                  (isVertical || size.height / size.width < kScreenRatio)))) {
-            await verticalScreenForTwoSeconds();
+          if (orientation == null &&
+              (mode == .vertical ||
+                  (mode == .auto && isVertical) ||
+                  (mode == .ratio &&
+                      (isVertical || screenRatio < kScreenRatio)))) {
+            await portraitUpMode();
           } else {
-            await landscape();
+            // https://github.com/flutter/flutter/issues/73651
+            // https://github.com/flutter/flutter/issues/183708
+            if (Platform.isAndroid) {
+              if ((orientation ?? _orientation) == .landscapeRight) {
+                await landscapeRightMode();
+              } else {
+                await landscapeLeftMode();
+              }
+            } else {
+              if (orientation == .landscapeLeft) {
+                await landscapeLeftMode();
+              } else {
+                await landscapeRightMode();
+              }
+            }
           }
         } else {
-          await enterDesktopFullscreen(inAppFullScreen: inAppFullScreen);
+          await enterDesktopFullScreen(inAppFullScreen: inAppFullScreen);
         }
       } else {
         if (PlatformUtils.isMobile) {
           showStatusBar();
-          if (mode == FullScreenMode.none) {
+          if (orientation == null && mode == .none) {
             return;
           }
           if (!horizontalScreen) {
-            await verticalScreenForTwoSeconds();
-          } else {
-            await autoScreen();
+            await portraitUpMode();
           }
         } else {
-          await exitDesktopFullscreen();
+          await exitDesktopFullScreen();
         }
       }
     } finally {
-      fsProcessing = false;
+      _fsProcessing = false;
     }
   }
 
@@ -1520,12 +1585,29 @@ class PlPlayerController with BlockConfigMixin {
     });
   }
 
-  bool isCloseAll = false;
+  bool _isCloseAll = false;
+  bool get isCloseAll => _isCloseAll;
+
+  void resetScreenRotation() {
+    if (horizontalScreen) {
+      fullMode();
+    } else {
+      portraitUpMode();
+    }
+  }
+
+  void onCloseAll() {
+    _isCloseAll = true;
+    dispose();
+    Get.until((route) => route.isFirst);
+  }
+
   void dispose() {
     // 每次减1，最后销毁
+    resetScreenRotation();
     cancelLongPressTimer();
     _cancelSubForSeek();
-    if (!isCloseAll && _playerCount > 1) {
+    if (!_isCloseAll && _playerCount > 1) {
       _playerCount -= 1;
       _heartDuration = 0;
       if (!_isPreviousVideoPage) {
@@ -1536,6 +1618,7 @@ class PlPlayerController with BlockConfigMixin {
 
     _playerCount = 0;
     danmakuController = null;
+    _stopOrientationListener();
     _disableAutoEnterPip();
     setPlayCallBack(null);
     dmState.clear();
@@ -1683,25 +1766,25 @@ class PlPlayerController with BlockConfigMixin {
     });
   }
 
-  bool onPopInvokedWithResult(bool didPop, Object? result) {
+  void onPopInvokedWithResult(bool didPop, Object? result) {
     if (didPop) {
       if (Platform.isAndroid) {
         _disableAutoEnterPipIfNeeded();
       }
-      return true;
+      return;
     }
     if (controlsLock.value) {
       onLockControl(false);
-      return true;
+      return;
     }
     if (isDesktopPip) {
       exitDesktopPip();
-      return true;
+      return;
     }
     if (isFullScreen.value) {
       triggerFullScreen(status: false);
-      return true;
+      return;
     }
-    return false;
+    Get.back();
   }
 }

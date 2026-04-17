@@ -1,6 +1,7 @@
 import 'dart:math';
 
 import 'package:PiliPlus/common/widgets/flutter/refresh_indicator.dart';
+import 'package:PiliPlus/common/widgets/flutter/scroll_view/scroll_view.dart';
 import 'package:PiliPlus/common/widgets/loading_widget/http_error.dart';
 import 'package:PiliPlus/common/widgets/scroll_physics.dart';
 import 'package:PiliPlus/common/widgets/sliver/sliver_floating_header.dart';
@@ -41,7 +42,7 @@ class _PopularSeriesPageState extends State<PopularSeriesPage> with GridMixin {
       ),
       body: refreshIndicator(
         onRefresh: _controller.onRefresh,
-        child: CustomScrollView(
+        child: customScrollView(
           physics: ReloadScrollPhysics(controller: _controller),
           slivers: [
             ViewSliverSafeArea(
@@ -143,7 +144,7 @@ class _PopularSeriesPageState extends State<PopularSeriesPage> with GridMixin {
                   return ListTile(
                     dense: true,
                     minTileHeight: 44,
-                    tileColor: isCurr ? Theme.of(context).highlightColor : null,
+                    enabled: !isCurr,
                     onTap: () {
                       Get.back();
                       if (!isCurr) {
@@ -156,7 +157,7 @@ class _PopularSeriesPageState extends State<PopularSeriesPage> with GridMixin {
                       item.name!,
                       style: const TextStyle(fontSize: 14),
                     ),
-                    trailing: isCurr ? const Icon(Icons.check, size: 18) : null,
+                    trailing: isCurr ? const Icon(Icons.check, size: 20) : null,
                     contentPadding: const EdgeInsetsGeometry.symmetric(
                       horizontal: 16,
                     ),
