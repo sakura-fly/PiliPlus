@@ -30,7 +30,6 @@ import 'package:PiliPlus/pages/video/widgets/player_focus.dart';
 import 'package:PiliPlus/plugin/pl_player/controller.dart';
 import 'package:PiliPlus/plugin/pl_player/models/play_status.dart';
 import 'package:PiliPlus/plugin/pl_player/utils/danmaku_options.dart';
-import 'package:PiliPlus/plugin/pl_player/utils/fullscreen.dart';
 import 'package:PiliPlus/plugin/pl_player/view/view.dart';
 import 'package:PiliPlus/services/service_locator.dart';
 import 'package:PiliPlus/utils/extension/num_ext.dart';
@@ -92,6 +91,7 @@ class _LiveRoomPageState extends State<LiveRoomPage>
     maxWidth = size.width;
     maxHeight = size.height;
     isPortrait = size.isPortrait;
+    plPlayerController.screenRatio = maxHeight / maxWidth;
   }
 
   @override
@@ -169,19 +169,12 @@ class _LiveRoomPageState extends State<LiveRoomPage>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
+    if (plPlayerController.visible = state == .resumed) {
       if (!plPlayerController.showDanmaku) {
         _liveRoomController.startLiveTimer();
         plPlayerController.showDanmaku = true;
-        if (isFullScreen && Platform.isIOS) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (!_liveRoomController.isPortrait.value) {
-              landscape();
-            }
-          });
-        }
       }
-    } else if (state == AppLifecycleState.paused) {
+    } else if (state == .paused) {
       _liveRoomController.cancelLiveTimer();
       plPlayerController
         ..showDanmaku = false
@@ -400,7 +393,9 @@ class _LiveRoomPageState extends State<LiveRoomPage>
           Scaffold(
             resizeToAvoidBottomInset: false,
             backgroundColor: Colors.transparent,
-            appBar: _buildAppBar(isFullScreen),
+            appBar: isFullScreen && !isPortrait
+                ? null
+                : _buildAppBar(isFullScreen),
             body: isPortrait
                 ? Obx(
                     () {
@@ -419,7 +414,9 @@ class _LiveRoomPageState extends State<LiveRoomPage>
 
   Widget _buildPH(bool isFullScreen) {
     final height = maxWidth / Style.aspectRatio16x9;
-    final videoHeight = isFullScreen ? maxHeight - padding.top : height;
+    final videoHeight = isFullScreen
+        ? maxHeight - (isPortrait ? padding.top : 0)
+        : height;
     final bottomHeight = maxHeight - padding.top - height - kToolbarHeight;
     return Column(
       children: [
@@ -447,7 +444,7 @@ class _LiveRoomPageState extends State<LiveRoomPage>
   Widget _buildPP(bool isFullScreen) {
     final bottomHeight = 70 + padding.bottom;
     final videoHeight = isFullScreen
-        ? maxHeight - padding.top
+        ? maxHeight - (isPortrait ? padding.top : 0)
         : maxHeight - bottomHeight;
     return Stack(
       clipBehavior: Clip.none,
@@ -662,7 +659,9 @@ class _LiveRoomPageState extends State<LiveRoomPage>
     videoWidth = maxWidth - rightWidth - padding.horizontal;
     final videoHeight = maxHeight - padding.top - kToolbarHeight;
     final width = isFullScreen ? maxWidth : videoWidth;
-    final height = isFullScreen ? maxHeight - padding.top : videoHeight;
+    final height = isFullScreen
+        ? maxHeight - (isPortrait ? padding.top : 0)
+        : videoHeight;
     return Padding(
       padding: isFullScreen
           ? EdgeInsets.zero
@@ -831,7 +830,7 @@ class _LiveRoomPageState extends State<LiveRoomPage>
                             ),
                           ),
                           Positioned(
-                            right: -12,
+                            left: 30,
                             top: -12,
                             child: Obx(() {
                               final likeClickTime =

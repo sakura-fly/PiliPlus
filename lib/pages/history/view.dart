@@ -2,6 +2,7 @@ import 'package:PiliPlus/common/widgets/appbar/appbar.dart';
 import 'package:PiliPlus/common/widgets/flutter/page/tabs.dart';
 import 'package:PiliPlus/common/widgets/flutter/pop_scope.dart';
 import 'package:PiliPlus/common/widgets/flutter/refresh_indicator.dart';
+import 'package:PiliPlus/common/widgets/flutter/scroll_view/scroll_view.dart';
 import 'package:PiliPlus/common/widgets/gesture/horizontal_drag_gesture_recognizer.dart';
 import 'package:PiliPlus/common/widgets/keep_alive_wrapper.dart';
 import 'package:PiliPlus/common/widgets/loading_widget/http_error.dart';
@@ -62,7 +63,7 @@ class _HistoryPageState extends State<HistoryPage>
     final padding = MediaQuery.viewPaddingOf(context);
     Widget child = refreshIndicator(
       onRefresh: _historyController.onRefresh,
-      child: CustomScrollView(
+      child: customScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
         controller: _historyController.scrollController,
         slivers: [
@@ -105,7 +106,8 @@ class _HistoryPageState extends State<HistoryPage>
                 right: padding.right,
               ),
               child: Obx(() {
-                if (_historyController.tabs.isEmpty) {
+                final tabs = _historyController.tabs;
+                if (tabs.isEmpty) {
                   return child;
                 }
                 return Column(
@@ -128,9 +130,7 @@ class _HistoryPageState extends State<HistoryPage>
                       },
                       tabs: [
                         const Tab(text: '全部'),
-                        ..._historyController.tabs.map(
-                          (item) => Tab(text: item.name),
-                        ),
+                        ...tabs.map((item) => Tab(text: item.name)),
                       ],
                     ),
                     Expanded(
@@ -143,9 +143,7 @@ class _HistoryPageState extends State<HistoryPage>
                             CustomHorizontalDragGestureRecognizer.new,
                         children: [
                           KeepAliveWrapper(child: child),
-                          ..._historyController.tabs.map(
-                            (item) => HistoryPage(type: item.type),
-                          ),
+                          ...tabs.map((item) => HistoryPage(type: item.type)),
                         ],
                       ),
                     ),
