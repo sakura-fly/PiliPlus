@@ -7,7 +7,6 @@ import 'package:PiliPlus/common/assets.dart';
 import 'package:PiliPlus/common/style.dart';
 import 'package:PiliPlus/common/widgets/custom_icon.dart';
 import 'package:PiliPlus/common/widgets/flutter/pop_scope.dart';
-import 'package:PiliPlus/common/widgets/flutter/scroll_view/scroll_view.dart';
 import 'package:PiliPlus/common/widgets/image/network_img_layer.dart';
 import 'package:PiliPlus/common/widgets/keep_alive_wrapper.dart';
 import 'package:PiliPlus/common/widgets/route_aware_mixin.dart';
@@ -59,7 +58,6 @@ import 'package:PiliPlus/utils/image_utils.dart';
 import 'package:PiliPlus/utils/mobile_observer.dart';
 import 'package:PiliPlus/utils/num_utils.dart';
 import 'package:PiliPlus/utils/page_utils.dart';
-import 'package:PiliPlus/utils/platform_utils.dart';
 import 'package:PiliPlus/utils/storage.dart';
 import 'package:PiliPlus/utils/storage_key.dart';
 import 'package:extended_nested_scroll_view/extended_nested_scroll_view.dart';
@@ -141,6 +139,10 @@ class _VideoDetailPageVState extends State<VideoDetailPageV>
 
     PlPlayerController.setPlayCallBack(playCallBack);
     videoDetailController = Get.put(VideoDetailController(), tag: heroTag);
+
+    if (videoDetailController.removeSafeArea) {
+      hideSystemBar();
+    }
 
     if (videoDetailController.showReply) {
       _videoReplyController = Get.put(
@@ -347,6 +349,10 @@ class _VideoDetailPageVState extends State<VideoDetailPageV>
       }
     }
 
+    if (!videoDetailController.removeSafeArea) {
+      showSystemBar();
+    }
+
     if (!videoDetailController.plPlayerController.isCloseAll) {
       videoPlayerServiceHandler?.onVideoDetailDispose(heroTag);
       if (plPlayerController != null) {
@@ -357,9 +363,7 @@ class _VideoDetailPageVState extends State<VideoDetailPageV>
       }
     }
     removeObserverMobile(this);
-    if (PlatformUtils.isMobile) {
-      showStatusBar();
-    }
+
     super.dispose();
   }
 
@@ -449,7 +453,11 @@ class _VideoDetailPageVState extends State<VideoDetailPageV>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    padding = MediaQuery.viewPaddingOf(context);
+    if (videoDetailController.removeSafeArea) {
+      padding = .zero;
+    } else {
+      padding = MediaQuery.viewPaddingOf(context);
+    }
 
     final size = MediaQuery.sizeOf(context);
     maxWidth = size.width;
@@ -507,6 +515,9 @@ class _VideoDetailPageVState extends State<VideoDetailPageV>
     }
   }
 
+  bool get removeAppBar =>
+      videoDetailController.removeSafeArea || (isFullScreen && !isPortrait);
+
   Widget get childWhenDisabled {
     videoDetailController.animationController
       ..removeListener(animListener)
@@ -516,7 +527,7 @@ class _VideoDetailPageVState extends State<VideoDetailPageV>
         final isFullScreen = this.isFullScreen;
         return Scaffold(
           resizeToAvoidBottomInset: false,
-          appBar: isFullScreen && !isPortrait
+          appBar: removeAppBar
               ? null
               : PreferredSize(
                   preferredSize: const Size.fromHeight(0),
@@ -818,7 +829,7 @@ class _VideoDetailPageVState extends State<VideoDetailPageV>
       final isFullScreen = this.isFullScreen;
       return Scaffold(
         resizeToAvoidBottomInset: false,
-        appBar: isFullScreen && !isPortrait
+        appBar: removeAppBar
             ? null
             : AppBar(backgroundColor: Colors.black, toolbarHeight: 0),
         body: Padding(
@@ -1018,7 +1029,7 @@ class _VideoDetailPageVState extends State<VideoDetailPageV>
                           localIntroPanel()
                         else if (showIntro)
                           KeepAliveWrapper(
-                            child: customScrollView(
+                            child: CustomScrollView(
                               key: const PageStorageKey(CommonIntroController),
                               controller:
                                   videoDetailController.effectiveIntroScrollCtr,
@@ -1048,7 +1059,7 @@ class _VideoDetailPageVState extends State<VideoDetailPageV>
     final isFullScreen = this.isFullScreen;
     return Scaffold(
       resizeToAvoidBottomInset: false,
-      appBar: isFullScreen && !isPortrait
+      appBar: removeAppBar
           ? null
           : AppBar(backgroundColor: Colors.black, toolbarHeight: 0),
       body: Padding(
@@ -1677,7 +1688,7 @@ class _VideoDetailPageVState extends State<VideoDetailPageV>
   Widget localIntroPanel({
     bool needCtr = true,
   }) {
-    return customScrollView(
+    return CustomScrollView(
       controller: needCtr
           ? videoDetailController.effectiveIntroScrollCtr
           : null,
@@ -1709,7 +1720,7 @@ class _VideoDetailPageVState extends State<VideoDetailPageV>
       return localIntroPanel(needCtr: needCtr);
     }
     Widget introPanel() {
-      Widget child = customScrollView(
+      Widget child = CustomScrollView(
         key: const PageStorageKey(CommonIntroController),
         controller: needCtr
             ? videoDetailController.effectiveIntroScrollCtr
