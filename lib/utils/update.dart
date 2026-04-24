@@ -51,7 +51,7 @@ abstract final class Update {
               child: Text(text),
             );
             return AlertDialog(
-              title: const Text('🎉 发现新版本11 '),
+              title: const Text('🎉 发现新版本 '),
               content: SizedBox(
                 height: 280,
                 child: SingleChildScrollView(

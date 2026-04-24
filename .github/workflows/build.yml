@@ -45,25 +45,8 @@ on:
         type: string
 
 jobs:
-  fetch_release_notes:
-    if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.build_android == 'true' || github.event.inputs.build_ios == 'true' || github.event.inputs.build_mac == 'true' || github.event.inputs.build_win_x64 == 'true' || github.event.inputs.build_linux_x64 == 'true')) }}
-    name: Fetch Release Notes
-    runs-on: ubuntu-latest
-    outputs:
-      release_body: ${{ steps.fetch_notes.outputs.release_body }}
-    steps:
-      - name: Fetch latest release from target repository
-        id: fetch_notes
-        run: |
-          RELEASE_INFO=$(curl -s https://api.github.com/repos/bggRGjQaUbCoE/PiliPlus/releases/latest)
-          RELEASE_BODY=$(echo "$RELEASE_INFO" | jq -r '.body // "No release notes available"')
-          echo "release_body<<EOF" >> $GITHUB_OUTPUT
-          echo "$RELEASE_BODY" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-
   auto_tag:
     if: ${{ github.event_name == 'push' }}
-    needs: fetch_release_notes
     name: auto tag
     runs-on: ubuntu-latest
     permissions: write-all
@@ -86,13 +69,69 @@ jobs:
         id: auto_tag
         run: |
           echo "auto_tag=v${{ env.version }}" >> $GITHUB_OUTPUT
+
+      - name: Generate release notes
+        id: generate_notes
+        run: |
+               # Get PiliPlus latest commit date
+               PILIPLUS_COMMIT_DATE=$(curl -s https://api.github.com/repos/bggRGjQaUbCoE/PiliPlus/commits/main | python3 -c "import sys, json; data=json.load(sys.stdin); print(data['commit']['committer']['date'])")
+               echo "PiliPlus latest commit date: $PILIPLUS_COMMIT_DATE"
+               
+               # Part 1: Current repository commits after PiliPlus latest commit (excluding merge commits)
+               COMMITS=$(git log --no-merges --pretty=format:"- %s (%h)" --since="$PILIPLUS_COMMIT_DATE" HEAD 2>/dev/null || echo "")
+               
+               # Part 2: Check PiliPlus for new releases and filter body
+               LATEST_RELEASE=$(curl -s https://api.github.com/repos/bggRGjQaUbCoE/PiliPlus/releases/latest)
+               RELEASE_TAG=$(echo "$LATEST_RELEASE" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+               RELEASE_BODY_RAW=$(echo "$LATEST_RELEASE" | python3 -c "import sys, json; data=json.load(sys.stdin); print(data.get('body', ''))" 2>/dev/null || echo "")
+               RELEASE_NAME=$(echo "$LATEST_RELEASE" | python3 -c "import sys, json; data=json.load(sys.stdin); print(data.get('name', '').split('\n')[0])" 2>/dev/null || echo "")
+               echo "LATEST_RELEASE"
+               echo "$LATEST_RELEASE"
+               echo "1111"
+               # Filter out Assets and Contributors sections
+               if [ -n "$RELEASE_BODY_RAW" ]; then
+               RELEASE_BODY=$(echo "$RELEASE_BODY_RAW" | sed '/^### Contributors$/,$d' | sed '/^Assets/d' | sed '/^Loading$/d' | sed '/^### Uh oh!$/,$d' | sed '/^All reactions$/,$d')
+               else
+               RELEASE_BODY=""
+               fi
+               
+               RELEASE_FILE="${{ github.workspace }}/.piliplus_last_release"
+               if [ -f "$RELEASE_FILE" ]; then
+               LAST_RELEASE=$(cat "$RELEASE_FILE")
+               else
+               LAST_RELEASE=""
+               fi
+               
+               # Generate release notes with proper formatting
+               {
+               if [ -n "$COMMITS" ]; then
+                echo "## What's Changed"
+                echo ""
+                echo "$COMMITS"
+                echo ""
+               fi
+               
+               if [ "$RELEASE_TAG" != "$LAST_RELEASE" ] && [ -n "$RELEASE_TAG" ] && [ -n "$RELEASE_BODY" ]; then
+                echo "## PiliPlus New Release: $RELEASE_NAME"
+                echo ""
+                echo "$RELEASE_BODY"
+                echo ""
+          #              echo "$RELEASE_TAG" > "$RELEASE_FILE"
+               fi
           
-
-
-
+          # If no updates, add default message
+               if [ -z "$COMMITS" ] && ([ "$RELEASE_TAG" = "$LAST_RELEASE" ] || [ -z "$RELEASE_TAG" ] || [ -z "$RELEASE_BODY" ]); then
+               echo "Initial release"
+               fi
+               } > release_notes.md
+               
+               cat release_notes.md
+  
+  
+  
 
   android:
-    needs: [auto_tag, fetch_release_notes]
+    needs: auto_tag
     if: ${{ (github.event_name == 'push' && github.repository == 'sakura-fly/PiliPlus') || github.event.inputs.build_android == 'true' }}
     name: Release Android
     runs-on: ubuntu-latest
@@ -146,11 +185,11 @@ jobs:
       - name: Flutter Build Release Apk
         if: ${{ github.event_name == 'push' }}
         run: flutter build apk --release --split-per-abi --dart-define-from-file=pili_release.json --pub
-#
-#      - name: Flutter Build Dev Apk
-#        if: ${{ github.event_name == 'push' }}
-#        run: |
-#          flutter build apk --release --split-per-abi --android-project-arg dev=1 --pub
+      #
+      #      - name: Flutter Build Dev Apk
+      #        if: ${{ github.event_name == 'push' }}
+      #        run: |
+      #          flutter build apk --release --split-per-abi --android-project-arg dev=1 --pub
 
       - name: Rename
         run: |
@@ -160,21 +199,31 @@ jobs:
           done
         shell: bash
 
-      - name: Upload Android artifacts
+      - name: Release
+        if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'push' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag || needs.auto_tag.outputs.auto_tag }}
+          name: ${{ github.event.inputs.tag || needs.auto_tag.outputs.auto_tag }}
+          body_path: release_notes.md
+          files: PiliPlus_android_*.apk
+          target_commitish: ${{ github.sha }}
+
+      - name: 上传
         uses: actions/upload-artifact@v7
         with:
           archive: false
           name: Android_arm64-v8a
           path: PiliPlus_android_*_arm64-v8a.apk
 
-      - name: Upload Android artifacts
+      - name: 上传
         uses: actions/upload-artifact@v7
         with:
           archive: false
           name: Android_armeabi-v7a
           path: PiliPlus_android_*_armeabi-v7a.apk
 
-      - name: Upload Android artifacts
+      - name: 上传
         uses: actions/upload-artifact@v7
         with:
           archive: false
@@ -182,61 +231,33 @@ jobs:
           path: PiliPlus_android_*_x86_64.apk
 
   ios:
-    needs: [auto_tag, fetch_release_notes]
+    needs: auto_tag
     if: ${{ (github.event_name == 'push' && github.repository == 'sakura-fly/PiliPlus') || github.event.inputs.build_ios == 'true' }}
     uses: ./.github/workflows/ios.yml
     permissions: write-all
     with:
-      tag: ${{ github.event.inputs.tag || (github.event_name == 'push' && needs.auto_tag.outputs.auto_tag) || '' }}
+      tag: ${{ github.event_name == 'workflow_dispatch' || needs.auto_tag.outputs.auto_tag}}
 
   mac:
-    needs: [auto_tag, fetch_release_notes]
+    needs: auto_tag
     if: ${{ (github.event_name == 'push' && github.repository == 'sakura-fly/PiliPlus') || github.event.inputs.build_mac == 'true' }}
     uses: ./.github/workflows/mac.yml
     permissions: write-all
     with:
-      tag: ${{ github.event.inputs.tag || (github.event_name == 'push' && needs.auto_tag.outputs.auto_tag) || '' }}
+      tag: ${{ github.event_name == 'workflow_dispatch' || needs.auto_tag.outputs.auto_tag}}
 
   win_x64:
-    needs: [auto_tag, fetch_release_notes]
+    needs: auto_tag
     if: ${{ (github.event_name == 'push' && github.repository == 'sakura-fly/PiliPlus') || github.event.inputs.build_win_x64 == 'true' }}
     uses: ./.github/workflows/win_x64.yml
     permissions: write-all
     with:
-      tag: ${{ github.event.inputs.tag || (github.event_name == 'push' && needs.auto_tag.outputs.auto_tag) || '' }}
+      tag: ${{ github.event_name == 'workflow_dispatch' || needs.auto_tag.outputs.auto_tag}}
 
   linux_x64:
-    needs: [auto_tag, fetch_release_notes]
+    needs: auto_tag
     if: ${{ (github.event_name == 'push' && github.repository == 'sakura-fly/PiliPlus') || github.event.inputs.build_linux_x64 == 'true' }}
     uses: ./.github/workflows/linux_x64.yml
     permissions: write-all
     with:
-      tag: ${{ github.event.inputs.tag || (github.event_name == 'push' && needs.auto_tag.outputs.auto_tag) || '' }}
-
-  create_release:
-    needs: [android, ios, mac, win_x64, linux_x64, fetch_release_notes]
-    if: ${{ always() && (github.event_name == 'workflow_dispatch' || github.event_name == 'push') }}
-    name: Create Unified Release
-    runs-on: ubuntu-latest
-    permissions: write-all
-    steps:
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-
-      - name: Prepare release files
-        run: |
-          mkdir -p release_files
-          find artifacts -type f -exec cp {} release_files/ \;
-          ls -la release_files/
-
-      - name: Create Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ github.event.inputs.tag || needs.auto_tag.outputs.auto_tag }}
-          name: ${{ github.event.inputs.tag || needs.auto_tag.outputs.auto_tag }}
-          body: ${{ needs.fetch_release_notes.outputs.release_body }}
-          files: release_files/*
-          target_commitish: ${{ github.sha }}
-          generate_release_notes: false
+      tag: ${{ github.event_name == 'workflow_dispatch' || needs.auto_tag.outputs.auto_tag}}
