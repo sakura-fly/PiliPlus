@@ -70,66 +70,6 @@ jobs:
         run: |
           echo "auto_tag=v${{ env.version }}" >> $GITHUB_OUTPUT
 
-      - name: Generate release notes
-        id: generate_notes
-        run: |
-               # Get PiliPlus latest commit date
-               PILIPLUS_COMMIT_DATE=$(curl -s https://api.github.com/repos/bggRGjQaUbCoE/PiliPlus/commits/main | python3 -c "import sys, json; data=json.load(sys.stdin); print(data['commit']['committer']['date'])")
-               echo "PiliPlus latest commit date: $PILIPLUS_COMMIT_DATE"
-               
-               # Part 1: Current repository commits after PiliPlus latest commit (excluding merge commits)
-               COMMITS=$(git log --no-merges --pretty=format:"- %s (%h)" --since="$PILIPLUS_COMMIT_DATE" HEAD 2>/dev/null || echo "")
-               
-               # Part 2: Check PiliPlus for new releases and filter body
-               LATEST_RELEASE=$(curl -s https://api.github.com/repos/bggRGjQaUbCoE/PiliPlus/releases/latest)
-               RELEASE_TAG=$(echo "$LATEST_RELEASE" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
-               RELEASE_BODY_RAW=$(echo "$LATEST_RELEASE" | python3 -c "import sys, json; data=json.load(sys.stdin); print(data.get('body', ''))" 2>/dev/null || echo "")
-               RELEASE_NAME=$(echo "$LATEST_RELEASE" | python3 -c "import sys, json; data=json.load(sys.stdin); print(data.get('name', '').split('\n')[0])" 2>/dev/null || echo "")
-               echo "LATEST_RELEASE"
-               echo "$LATEST_RELEASE"
-               echo "1111"
-               # Filter out Assets and Contributors sections
-               if [ -n "$RELEASE_BODY_RAW" ]; then
-               RELEASE_BODY=$(echo "$RELEASE_BODY_RAW" | sed '/^### Contributors$/,$d' | sed '/^Assets/d' | sed '/^Loading$/d' | sed '/^### Uh oh!$/,$d' | sed '/^All reactions$/,$d')
-               else
-               RELEASE_BODY=""
-               fi
-               
-               RELEASE_FILE="${{ github.workspace }}/.piliplus_last_release"
-               if [ -f "$RELEASE_FILE" ]; then
-               LAST_RELEASE=$(cat "$RELEASE_FILE")
-               else
-               LAST_RELEASE=""
-               fi
-               
-               # Generate release notes with proper formatting
-               {
-               if [ -n "$COMMITS" ]; then
-                echo "## What's Changed"
-                echo ""
-                echo "$COMMITS"
-                echo ""
-               fi
-               
-               if [ "$RELEASE_TAG" != "$LAST_RELEASE" ] && [ -n "$RELEASE_TAG" ] && [ -n "$RELEASE_BODY" ]; then
-                echo "## PiliPlus New Release: $RELEASE_NAME"
-                echo ""
-                echo "$RELEASE_BODY"
-                echo ""
-          #              echo "$RELEASE_TAG" > "$RELEASE_FILE"
-               fi
-          
-          # If no updates, add default message
-               if [ -z "$COMMITS" ] && ([ "$RELEASE_TAG" = "$LAST_RELEASE" ] || [ -z "$RELEASE_TAG" ] || [ -z "$RELEASE_BODY" ]); then
-               echo "Initial release"
-               fi
-               } > release_notes.md
-               
-               cat release_notes.md
-  
-  
-  
-
   android:
     needs: auto_tag
     if: ${{ (github.event_name == 'push' && github.repository == 'sakura-fly/PiliPlus') || github.event.inputs.build_android == 'true' }}
@@ -181,6 +121,70 @@ jobs:
           fi
 
 
+      - name: Generate release notes
+        id: generate_notes
+        run: |
+          # Get PiliPlus latest commit date
+          PILIPLUS_COMMIT_DATE=$(curl -s https://api.github.com/repos/bggRGjQaUbCoE/PiliPlus/commits/main | python3 -c "import sys, json; data=json.load(sys.stdin); print(data['commit']['committer']['date'])")
+          echo "PiliPlus latest commit date: $PILIPLUS_COMMIT_DATE"
+          
+          # Part 1: Current repository commits after PiliPlus latest commit (excluding merge commits)
+          COMMITS=$(git log --no-merges --pretty=format:"- %s (%h)" --since="$PILIPLUS_COMMIT_DATE" HEAD 2>/dev/null || echo "")
+          
+          # Part 2: Check PiliPlus for new releases and filter body
+          LATEST_RELEASE=$(curl -s https://api.github.com/repos/bggRGjQaUbCoE/PiliPlus/releases/latest)
+          RELEASE_TAG=$(echo "$LATEST_RELEASE" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+          RELEASE_BODY_RAW=$(echo "$LATEST_RELEASE" | python3 -c "import sys, json; data=json.load(sys.stdin); print(data.get('body', ''))" 2>/dev/null || echo "")
+          RELEASE_NAME=$(echo "$LATEST_RELEASE" | python3 -c "import sys, json; data=json.load(sys.stdin); print(data.get('name', '').split('\n')[0])" 2>/dev/null || echo "")
+          echo "LATEST_RELEASE"
+          echo "$LATEST_RELEASE"
+          echo "1111"
+          # Filter out Assets and Contributors sections
+          if [ -n "$RELEASE_BODY_RAW" ]; then
+          RELEASE_BODY=$(echo "$RELEASE_BODY_RAW" | sed '/^### Contributors$/,$d' | sed '/^Assets/d' | sed '/^Loading$/d' | sed '/^### Uh oh!$/,$d' | sed '/^All reactions$/,$d')
+          else
+          RELEASE_BODY=""
+          fi
+          
+          RELEASE_FILE="${{ github.workspace }}/.piliplus_last_release"
+          if [ -f "$RELEASE_FILE" ]; then
+          LAST_RELEASE=$(cat "$RELEASE_FILE")
+          else
+          LAST_RELEASE=""
+          fi
+          
+          # Generate release notes with proper formatting
+          {
+          if [ -n "$COMMITS" ]; then
+           echo "## What's Changed"
+           echo ""
+           echo "$COMMITS"
+           echo ""
+          fi
+          
+          if [ "$RELEASE_TAG" != "$LAST_RELEASE" ] && [ -n "$RELEASE_TAG" ] && [ -n "$RELEASE_BODY" ]; then
+           echo "## PiliPlus New Release: $RELEASE_NAME"
+           echo ""
+           echo "$RELEASE_BODY"
+           echo ""
+          #              echo "$RELEASE_TAG" > "$RELEASE_FILE"
+          fi
+          
+          # If no updates, add default message
+          if [ -z "$COMMITS" ] && ([ "$RELEASE_TAG" = "$LAST_RELEASE" ] || [ -z "$RELEASE_TAG" ] || [ -z "$RELEASE_BODY" ]); then
+          echo "Initial release"
+          fi
+          } > release_notes.md
+          
+          cat release_notes.md
+      
+   
+   
+      
+      
+      
+      
+      
 
       - name: Flutter Build Release Apk
         if: ${{ github.event_name == 'push' }}
