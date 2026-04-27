@@ -136,13 +136,11 @@ jobs:
           RELEASE_TAG=$(echo "$LATEST_RELEASE" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
           RELEASE_BODY_RAW=$(echo "$LATEST_RELEASE" | python3 -c "import sys, json; data=json.load(sys.stdin); print(data.get('body', ''))" 2>/dev/null || echo "")
           RELEASE_NAME=$(echo "$LATEST_RELEASE" | python3 -c "import sys, json; data=json.load(sys.stdin); print(data.get('name', '').split('\n')[0])" 2>/dev/null || echo "")
-          echo "LATEST_RELEASE"
-          echo "$LATEST_RELEASE"
-          echo "1111"
+          
           # Filter out Assets and Contributors sections
           if [ -n "$RELEASE_BODY_RAW" ]; then
           RELEASE_BODY=$(echo "$RELEASE_BODY_RAW" | sed '/^### Contributors$/,$d' | sed '/^Assets/d' | sed '/^Loading$/d' | sed '/^### Uh oh!$/,$d' | sed '/^All reactions$/,$d')
-          else
+          else 
           RELEASE_BODY=""
           fi
           
