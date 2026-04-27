@@ -42,7 +42,9 @@
         android:fullBackupContent="false"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
-        tools:replace="android:allowBackup">
+        android:isTV="false"
+        android:enableOnBackInvokedCallback="true"
+        tools:replace="android:allowBackup,android:isTV">
         <meta-data
             android:name="io.flutter.embedding.android.EnableImpeller"
             android:value="false" />
@@ -55,7 +57,9 @@
             android:resizeableActivity="true"
             android:supportsPictureInPicture="true"
             android:theme="@style/LaunchTheme"
-            android:windowSoftInputMode="adjustResize">
+            android:windowSoftInputMode="adjustResize"
+            android:minWidth="320"
+            android:minHeight="480">
 
             <meta-data
                 android:name="android.app.shortcuts"

@@ -13,6 +13,7 @@ import 'package:PiliPlus/pages/home/view.dart';
 import 'package:PiliPlus/pages/main/controller.dart';
 import 'package:PiliPlus/plugin/pl_player/controller.dart';
 import 'package:PiliPlus/plugin/pl_player/models/play_status.dart';
+import 'package:PiliPlus/services/tv_remote_controller.dart';
 import 'package:PiliPlus/utils/app_scheme.dart';
 import 'package:PiliPlus/utils/extension/context_ext.dart';
 import 'package:PiliPlus/utils/extension/size_ext.dart';
@@ -43,6 +44,7 @@ class _MainAppState extends PopScopeState<MainApp>
         WindowListener,
         TrayListener {
   final _mainController = Get.put(MainController());
+  final _tvController = Get.put(TvRemoteController());
   late final _setting = GStorage.setting;
   late EdgeInsets _padding;
 
@@ -484,7 +486,17 @@ class _MainAppState extends PopScopeState<MainApp>
       );
     }
 
-    return child;
+    return Obx(() {
+      if (_tvController.isTvMode) {
+        return KeyboardListener(
+          focusNode: _tvController.focusNode,
+          autofocus: true,
+          onKeyEvent: _tvController.handleKeyEvent,
+          child: child,
+        );
+      }
+      return child;
+    });
   }
 
   Widget _buildIcon({required NavigationBarType type, bool selected = false}) {

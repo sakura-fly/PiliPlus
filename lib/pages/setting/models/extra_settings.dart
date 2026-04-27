@@ -28,6 +28,7 @@ import 'package:PiliPlus/pages/setting/widgets/slider_dialog.dart';
 import 'package:PiliPlus/pages/video/reply/widgets/reply_item_grpc.dart';
 import 'package:PiliPlus/plugin/pl_player/controller.dart';
 import 'package:PiliPlus/services/download/download_service.dart';
+import 'package:PiliPlus/services/tv_remote_controller.dart';
 import 'package:PiliPlus/utils/accounts.dart';
 import 'package:PiliPlus/utils/cache_manager.dart';
 import 'package:PiliPlus/utils/extension/num_ext.dart';
@@ -68,6 +69,40 @@ List<SettingsModel> get extraSettings => [
       getSubtitle: () => downloadPath,
       leading: const Icon(Icons.storage),
       onTap: _showDownPathDialog,
+    ),
+  ],
+  if (Platform.isAndroid) ...[
+    SplitModel(
+      normalModel: const NormalModel.split(
+        title: 'TV/投影仪模式',
+        subtitle: '支持遥控器控制',
+        leading: Icon(Icons.tv),
+      ),
+      switchModel: SwitchModel.split(
+        defaultVal: false,
+        setKey: SettingBoxKey.tvMode,
+        onChanged: (value) {
+          try {
+            Get.find<TvRemoteController>().isTvMode = value;
+          } catch (_) {}
+        },
+      ),
+    ),
+    SplitModel(
+      normalModel: const NormalModel.split(
+        title: 'TV焦点缩放',
+        subtitle: '遥控器选中时放大',
+        leading: Icon(Icons.zoom_in),
+      ),
+      switchModel: SwitchModel.split(
+        defaultVal: true,
+        setKey: SettingBoxKey.tvFocusAnimation,
+        onChanged: (value) {
+          try {
+            Get.find<TvRemoteController>().setFocusAnimation(value);
+          } catch (_) {}
+        },
+      ),
     ),
   ],
   SplitModel(
