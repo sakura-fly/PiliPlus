@@ -35,11 +35,11 @@ import 'package:PiliPlus/pages/video/widgets/header_mixin.dart';
 import 'package:PiliPlus/plugin/pl_player/controller.dart';
 import 'package:PiliPlus/plugin/pl_player/models/data_source.dart';
 import 'package:PiliPlus/plugin/pl_player/models/play_repeat.dart';
-import 'package:PiliPlus/services/service_locator.dart';
 import 'package:PiliPlus/services/shutdown_timer_service.dart'
     show shutdownTimerService;
 import 'package:PiliPlus/utils/accounts.dart';
 import 'package:PiliPlus/utils/accounts/account.dart';
+import 'package:PiliPlus/utils/android/bindings.g.dart';
 import 'package:PiliPlus/utils/connectivity_utils.dart';
 import 'package:PiliPlus/utils/extension/num_ext.dart';
 import 'package:PiliPlus/utils/extension/string_ext.dart';
@@ -58,7 +58,6 @@ import 'package:collection/collection.dart';
 import 'package:dio/dio.dart';
 import 'package:easy_debounce/easy_throttle.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:floating/floating.dart';
 import 'package:flutter/foundation.dart' show compute;
 import 'package:flutter/material.dart' hide showBottomSheet;
 import 'package:flutter_smart_dialog/flutter_smart_dialog.dart';
@@ -668,51 +667,49 @@ class HeaderControlState extends State<HeaderControl>
                   onTap: () async {
                     Get.back();
                     try {
-                      final result = await FilePicker.pickFiles(
+                      final result = await FilePicker.pickFile(
                         type: .custom,
                         allowedExtensions: const ['json', 'vtt', 'srt', 'ass'],
                       );
                       if (result != null) {
-                        final file = result.files.single;
+                        final file = result.xFile;
                         final path = file.path;
-                        if (path != null) {
-                          final name = file.name;
-                          final length = videoDetailCtr.subtitles.length;
-                          if (name.endsWith('.json')) {
-                            final file = File(path);
-                            final stream = file.openRead().transform(
-                              utf8.decoder,
-                            );
-                            final buffer = StringBuffer();
-                            await for (final chunk in stream) {
-                              if (!mounted) return;
-                              buffer.write(chunk);
-                            }
-                            if (!mounted) return;
-                            String sub = buffer.toString();
-                            sub = await compute<List, String>(
-                              VideoHttp.processList,
-                              jsonDecode(sub)['body'],
-                            );
-                            if (!mounted) return;
-                            videoDetailCtr.vttSubtitles[length] = (
-                              isData: true,
-                              id: sub,
-                            );
-                          } else {
-                            videoDetailCtr.vttSubtitles[length] = (
-                              isData: false,
-                              id: path,
-                            );
-                          }
-                          videoDetailCtr.subtitles.add(
-                            Subtitle(
-                              lan: '',
-                              lanDoc: name.split('.').firstOrNull ?? name,
-                            ),
+                        final name = file.name;
+                        final length = videoDetailCtr.subtitles.length;
+                        if (name.endsWith('.json')) {
+                          final file = File(path);
+                          final stream = file.openRead().transform(
+                            utf8.decoder,
                           );
-                          await videoDetailCtr.setSubtitle(length + 1);
+                          final buffer = StringBuffer();
+                          await for (final chunk in stream) {
+                            if (!mounted) return;
+                            buffer.write(chunk);
+                          }
+                          if (!mounted) return;
+                          String sub = buffer.toString();
+                          sub = await compute<List, String>(
+                            VideoHttp.processList,
+                            jsonDecode(sub)['body'],
+                          );
+                          if (!mounted) return;
+                          videoDetailCtr.vttSubtitles[length] = (
+                            isData: true,
+                            id: sub,
+                          );
+                        } else {
+                          videoDetailCtr.vttSubtitles[length] = (
+                            isData: false,
+                            id: path,
+                          );
                         }
+                        videoDetailCtr.subtitles.add(
+                          Subtitle(
+                            lan: '',
+                            lanDoc: name.split('.').firstOrNull ?? name,
+                          ),
+                        );
+                        await videoDetailCtr.setSubtitle(length + 1);
                       }
                     } catch (e) {
                       SmartDialog.showToast('加载失败: $e');
@@ -1250,7 +1247,7 @@ class HeaderControlState extends State<HeaderControl>
   /// 字幕设置
   void showSetSubtitle() {
     showBottomSheet(
-      padding: isFullScreen ? 70 : null,
+      padding: () => isFullScreen ? const .only(bottom: 70) : .zero,
       (context, setState) {
         final theme = Theme.of(context);
 
@@ -1945,87 +1942,12 @@ class HeaderControlState extends State<HeaderControl>
                   child: IconButton(
                     tooltip: '画中画',
                     style: btnStyle,
-                    onPressed: () async {
+                    onPressed: () {
                       if (PlatformUtils.isDesktop) {
                         plPlayerController.toggleDesktopPip();
                         return;
                       }
-                      if (await Floating().isPipAvailable) {
-                        if (context.mounted &&
-                            !videoPlayerServiceHandler!.enableBackgroundPlay) {
-                          final theme = Theme.of(context);
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Column(
-                                children: [
-                                  const Row(
-                                    children: [
-                                      Icon(
-                                        Icons.check,
-                                        color: Colors.green,
-                                      ),
-                                      SizedBox(width: 10),
-                                      Text(
-                                        '画中画',
-                                        style: TextStyle(
-                                          fontSize: 15,
-                                          height: 1.5,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 10),
-                                  const Text(
-                                    '建议开启【后台音频服务】\n'
-                                    '避免画中画没有暂停按钮',
-                                    style: TextStyle(
-                                      fontSize: 12.5,
-                                      height: 1.5,
-                                    ),
-                                  ),
-                                  Row(
-                                    children: [
-                                      TextButton(
-                                        style: ButtonStyle(
-                                          foregroundColor:
-                                              WidgetStatePropertyAll(
-                                                theme
-                                                    .snackBarTheme
-                                                    .actionTextColor,
-                                              ),
-                                        ),
-                                        onPressed: () {
-                                          plPlayerController.setBackgroundPlay(
-                                            true,
-                                          );
-                                          SmartDialog.showToast("请重新载入本页面刷新");
-                                        },
-                                        child: const Text('启用后台音频服务'),
-                                      ),
-                                      const SizedBox(width: 10),
-                                      TextButton(
-                                        style: ButtonStyle(
-                                          foregroundColor:
-                                              WidgetStatePropertyAll(
-                                                theme
-                                                    .snackBarTheme
-                                                    .actionTextColor,
-                                              ),
-                                        ),
-                                        onPressed: () {},
-                                        child: const Text('不启用'),
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                              duration: const Duration(seconds: 2),
-                              showCloseIcon: true,
-                            ),
-                          );
-                          await Future.delayed(const Duration(seconds: 3));
-                        }
-                        if (!context.mounted) return;
+                      if (AndroidHelper.isPipAvailable) {
                         plPlayerController.enterPip();
                       }
                     },

@@ -1,6 +1,5 @@
 import 'dart:async' show FutureOr;
 import 'dart:convert' show utf8, jsonDecode;
-import 'dart:io' show File;
 
 import 'package:PiliPlus/common/style.dart';
 import 'package:PiliPlus/utils/extension/theme_ext.dart';
@@ -117,27 +116,24 @@ Future<void> importFromClipBoard<T>(
 Future<void> importFromLocalFile<T>({
   required FutureOr<void> Function(T json) onImport,
 }) async {
-  final result = await FilePicker.pickFiles(
+  final result = await FilePicker.pickFile(
     type: .custom,
     allowedExtensions: const ['json', 'txt'],
   );
   if (result != null) {
-    final path = result.files.first.path;
-    if (path != null) {
-      final data = await File(path).readAsString();
-      final T json;
-      try {
-        json = jsonDecode(data);
-      } catch (e) {
-        SmartDialog.showToast('解析json失败：$e');
-        return;
-      }
-      try {
-        await onImport(json);
-        SmartDialog.showToast('导入成功');
-      } catch (e) {
-        SmartDialog.showToast('导入失败：$e');
-      }
+    final data = await result.xFile.readAsString();
+    final T json;
+    try {
+      json = jsonDecode(data);
+    } catch (e) {
+      SmartDialog.showToast('解析json失败：$e');
+      return;
+    }
+    try {
+      await onImport(json);
+      SmartDialog.showToast('导入成功');
+    } catch (e) {
+      SmartDialog.showToast('导入失败：$e');
     }
   }
 }
@@ -181,7 +177,7 @@ void importFromInput<T>(
           child: Text(
             '取消',
             style: TextStyle(
-              color: Theme.of(context).colorScheme.outline,
+              color: ColorScheme.of(context).outline,
             ),
           ),
         ),

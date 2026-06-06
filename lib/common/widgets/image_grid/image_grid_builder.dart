@@ -94,11 +94,10 @@ class RenderImageGrid extends RenderBox
         RenderBoxContainerDefaultsMixin<RenderBox, MultiChildLayoutParentData>,
         RenderObjectWithLayoutCallbackMixin {
   RenderImageGrid({
-    required ValueChanged<int> onTap,
+    required this._onTap,
     required OnShowMenu? onSecondaryTapUp,
     required OnShowMenu? onLongPressStart,
-  }) : _onTap = onTap,
-       _onSecondaryTapUp = onSecondaryTapUp,
+  }) : _onSecondaryTapUp = onSecondaryTapUp,
        _onLongPressStart = onLongPressStart {
     _tapGestureRecognizer = TapGestureRecognizer()..onTap = _handleOnTap;
     if (onSecondaryTapUp != null) {
@@ -497,7 +496,7 @@ class ImageGridRenderObjectElement extends RenderObjectElement {
         final height = img.height;
         final ratioWH = width / height;
         final ratioHW = height / width;
-        imageWidth = ratioWH > 1.5
+        imageWidth = ratioWH > 1.45
             ? maxWidth
             : (ratioWH >= 1 || (height > width && ratioHW < 1.5))
             ? 2 * imageWidth
