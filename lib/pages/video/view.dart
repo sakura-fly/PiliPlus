@@ -140,6 +140,8 @@ class _VideoDetailPageVState extends State<VideoDetailPageV>
     super.initState();
 
     PlPlayerController.setPlayCallBack(playCallBack);
+    PlPlayerController.setPrevPlayCallBack(prevPlayCallBack);
+    PlPlayerController.setNextPlayCallBack(nextPlayCallBack);
     videoDetailController = Get.put(VideoDetailController(), tag: heroTag);
 
     if (videoDetailController.removeSafeArea) {
@@ -207,6 +209,24 @@ class _VideoDetailPageVState extends State<VideoDetailPageV>
         ..addPositionListener(positionListener);
     }
     return plPlayerController?.play();
+  }
+
+  // 耳机/系统媒体键"上一首"：等同点击播放器"上一集"按钮
+  bool prevPlayCallBack() {
+    final result = introController.prevPlay();
+    if (!result) {
+      SmartDialog.showToast('已经是第一集了');
+    }
+    return result;
+  }
+
+  // 耳机/系统媒体键"下一首"：等同点击播放器"下一集"按钮
+  bool nextPlayCallBack() {
+    final result = introController.nextPlay();
+    if (!result) {
+      SmartDialog.showToast('已经是最后一集了');
+    }
+    return result;
   }
 
   // 播放器状态监听
@@ -411,6 +431,8 @@ class _VideoDetailPageVState extends State<VideoDetailPageV>
     }
 
     PlPlayerController.setPlayCallBack(playCallBack);
+    PlPlayerController.setPrevPlayCallBack(prevPlayCallBack);
+    PlPlayerController.setNextPlayCallBack(nextPlayCallBack);
 
     introController.startTimer();
 

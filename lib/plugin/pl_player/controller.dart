@@ -68,6 +68,9 @@ import 'package:window_manager/window_manager.dart';
 
 typedef PlayCallback = Future<void>? Function();
 
+/// 上一集/下一集回调（返回是否切换成功）
+typedef SkipPlayCallback = bool Function();
+
 class PlPlayerController with BlockConfigMixin {
   Player? _videoPlayerController;
   VideoController? _videoController;
@@ -437,8 +440,30 @@ class PlPlayerController with BlockConfigMixin {
 
   static PlayCallback? _playCallBack;
 
+  static void setPrevPlayCallBack(SkipPlayCallback? prevPlayCallBack) {
+    _prevPlayCallBack = prevPlayCallBack;
+  }
+
+  static SkipPlayCallback? _prevPlayCallBack;
+
+  static void setNextPlayCallBack(SkipPlayCallback? nextPlayCallBack) {
+    _nextPlayCallBack = nextPlayCallBack;
+  }
+
+  static SkipPlayCallback? _nextPlayCallBack;
+
   static Future<void>? playIfExists() {
     return _playCallBack?.call();
+  }
+
+  /// 播放上一个视频（由耳机/系统媒体键等信号触发）
+  static bool? prevPlayIfExists() {
+    return _prevPlayCallBack?.call();
+  }
+
+  /// 播放下一个视频（由耳机/系统媒体键等信号触发）
+  static bool? nextPlayIfExists() {
+    return _nextPlayCallBack?.call();
   }
 
   // try to get PlayerStatus
@@ -1564,6 +1589,8 @@ class PlPlayerController with BlockConfigMixin {
     _stopOrientationListener();
     _disableAutoEnterPip();
     setPlayCallBack(null);
+    setPrevPlayCallBack(null);
+    setNextPlayCallBack(null);
     dmState.clear();
     if (showSeekPreview) {
       _clearPreview();
@@ -1719,6 +1746,8 @@ class PlPlayerController with BlockConfigMixin {
       }
 
       setPlayCallBack(null);
+      setPrevPlayCallBack(null);
+      setNextPlayCallBack(null);
 
       if (Platform.isAndroid && _playerCount <= 1) {
         _disableAutoEnterPip();

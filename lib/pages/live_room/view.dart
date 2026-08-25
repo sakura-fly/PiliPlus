@@ -91,6 +91,9 @@ class _LiveRoomPageState extends State<LiveRoomPage>
     plPlayerController = _liveRoomController.plPlayerController
       ..addStatusLister(playerListener);
     PlPlayerController.setPlayCallBack(plPlayerController.play);
+    // 直播无上一集/下一集，清除视频页注册的媒体键切换回调
+    PlPlayerController.setPrevPlayCallBack(null);
+    PlPlayerController.setNextPlayCallBack(null);
     if (plPlayerController.removeSafeArea) {
       hideSystemBar();
     }
@@ -125,6 +128,9 @@ class _LiveRoomPageState extends State<LiveRoomPage>
     plPlayerController.danmakuController =
         _liveRoomController.danmakuController;
     PlPlayerController.setPlayCallBack(plPlayerController.play);
+    // 直播无上一集/下一集，清除视频页注册的媒体键切换回调
+    PlPlayerController.setPrevPlayCallBack(null);
+    PlPlayerController.setNextPlayCallBack(null);
     _liveRoomController.startLiveTimer();
     if (plPlayerController.playerStatus.isPlaying &&
         plPlayerController.cid == null) {
