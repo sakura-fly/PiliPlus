@@ -8,8 +8,8 @@ import 'package:PiliPlus/utils/grid.dart';
 import 'package:PiliPlus/utils/page_utils.dart';
 import 'package:PiliPlus/utils/request_utils.dart';
 import 'package:PiliPlus/utils/utils.dart';
-import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:material_ui/material_ui.dart';
 
 class LaterSearchPage extends StatefulWidget {
   const LaterSearchPage({super.key});
@@ -19,7 +19,8 @@ class LaterSearchPage extends StatefulWidget {
 }
 
 class _LaterSearchPageState
-    extends CommonSearchPageState<LaterSearchPage, LaterData, LaterItemModel> {
+    extends CommonSearchPageState<LaterSearchPage, LaterData, LaterItemModel>
+    with GridMixin {
   @override
   final LaterSearchController controller = Get.put(
     LaterSearchController(),
@@ -57,8 +58,6 @@ class _LaterSearchPageState
       ),
     ];
   }
-
-  late final gridDelegate = Grid.videoCardHDelegate(context, minHeight: 110);
 
   @override
   Widget buildList(List<LaterItemModel> list) {

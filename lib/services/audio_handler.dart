@@ -41,6 +41,8 @@ class VideoPlayerServiceHandler extends BaseAudioHandler with SeekHandler {
   Future<void>? Function()? onPlay;
   Future<void>? Function()? onPause;
   Future<void>? Function(Duration position)? onSeek;
+  Future<void>? Function()? onPrevPlay;
+  Future<void>? Function()? onNextPlay;
 
   @override
   Future<void> play() {
@@ -54,6 +56,28 @@ class VideoPlayerServiceHandler extends BaseAudioHandler with SeekHandler {
   Future<void> pause() {
     return onPause?.call() ?? PlPlayerController.pauseIfExists();
     // player.pause();
+  }
+
+  /// 收到系统/耳机"上一首"信号时，播放上一个视频
+  @override
+  Future<void> skipToPrevious() async {
+    final prevPlay = onPrevPlay;
+    if (prevPlay != null) {
+      await prevPlay();
+    } else {
+      PlPlayerController.prevPlayIfExists();
+    }
+  }
+
+  /// 收到系统/耳机"下一首"信号时，播放下一个视频
+  @override
+  Future<void> skipToNext() async {
+    final nextPlay = onNextPlay;
+    if (nextPlay != null) {
+      await nextPlay();
+    } else {
+      PlPlayerController.nextPlayIfExists();
+    }
   }
 
   @override

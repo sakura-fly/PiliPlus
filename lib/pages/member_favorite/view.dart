@@ -7,8 +7,8 @@ import 'package:PiliPlus/models_new/space/space_fav/data.dart';
 import 'package:PiliPlus/pages/member_favorite/controller.dart';
 import 'package:PiliPlus/pages/member_favorite/widget/item.dart';
 import 'package:PiliPlus/utils/grid.dart';
-import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:material_ui/material_ui.dart';
 
 class MemberFavorite extends StatefulWidget {
   const MemberFavorite({
@@ -70,7 +70,7 @@ class _MemberFavoriteState extends State<MemberFavorite>
       Loading() => SliverPadding(
         padding: const EdgeInsets.only(top: 7),
         sliver: SliverGrid.builder(
-          gridDelegate: Grid.videoCardHDelegate(context),
+          gridDelegate: gridDelegate,
           itemBuilder: (context, index) => const VideoCardHSkeleton(),
           itemCount: 10,
         ),
@@ -169,7 +169,7 @@ class _MemberFavoriteState extends State<MemberFavorite>
               itemBuilder: (context, index) {
                 final item = list[index];
                 return SizedBox(
-                  height: 98,
+                  height: 110,
                   child: MemberFavItem(
                     item: item,
                     onDelete: (isDeleted) {

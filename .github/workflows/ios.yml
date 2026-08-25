@@ -16,7 +16,7 @@ jobs:
     runs-on: macos-26
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -36,19 +36,18 @@ jobs:
 
       - name: Build iOS
         run: |
-          flutter build ios --release --no-codesign --dart-define-from-file=pili_release.json
+          flutter build ios --release --no-codesign --dart-define-from-file=pili_release.json --no-pub
           ln -sf ./build/ios/iphoneos Payload
           # make AltSign happy...
           find Payload/Runner.app/Frameworks -type d -name "*.framework" -exec codesign --force --sign - --preserve-metadata=identifier,entitlements {} \;
           zip -r9 PiliPlus_ios_${{env.version}}.ipa Payload/Runner.app
 
       - name: Release
-        if: ${{ inputs.tag != '' }}
-        uses: softprops/action-gh-release@v2
+        if: ${{ github.event.inputs.tag != '' }}
+        uses: softprops/action-gh-release@v3
         with:
-          tag_name: ${{ inputs.tag }}
-          name: ${{ inputs.tag }}
-          target_commitish: ${{ github.sha }}
+          tag_name: ${{ github.event.inputs.tag }}
+          name: ${{ github.event.inputs.tag }}
           files: |
             PiliPlus_ios_*.ipa
 

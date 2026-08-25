@@ -5,9 +5,9 @@ import 'package:PiliPlus/pages/search_panel/controller.dart';
 import 'package:PiliPlus/pages/search_panel/pgc/widgets/item.dart';
 import 'package:PiliPlus/pages/search_panel/view.dart';
 import 'package:PiliPlus/utils/grid.dart';
-import 'package:flutter/material.dart'
-    hide SliverGridDelegateWithMaxCrossAxisExtent;
 import 'package:get/get.dart';
+import 'package:material_ui/material_ui.dart'
+    hide SliverGridDelegateWithMaxCrossAxisExtent;
 
 class SearchPgcPanel extends CommonSearchPanel {
   const SearchPgcPanel({
@@ -70,7 +70,6 @@ class _SearchPgcPanelState
       mainAxisSpacing: 2,
       maxCrossAxisExtent: Grid.smallCardWidth * 2,
       childAspectRatio: Style.aspectRatio * 1.5,
-      minHeight: MediaQuery.textScalerOf(context).scale(155),
     ),
     itemBuilder: (context, index) => const MediaPgcSkeleton(),
     itemCount: 10,
