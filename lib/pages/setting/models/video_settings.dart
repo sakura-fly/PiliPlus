@@ -16,11 +16,11 @@ import 'package:PiliPlus/utils/storage_key.dart';
 import 'package:PiliPlus/utils/storage_pref.dart';
 import 'package:PiliPlus/utils/video_utils.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show FilteringTextInputFormatter;
 import 'package:flutter_smart_dialog/flutter_smart_dialog.dart';
 import 'package:get/get.dart';
 import 'package:material_design_icons_flutter/material_design_icons_flutter.dart';
+import 'package:material_ui/material_ui.dart';
 
 List<SettingsModel> get videoSettings => [
   const SwitchModel(
@@ -127,11 +127,16 @@ List<SettingsModel> get videoSettings => [
   NormalModel(
     title: '首选解码格式',
     leading: const Icon(Icons.movie_creation_outlined),
-    getSubtitle: () {
-      final list = Pref.preferCodecs;
-      return '首选解码格式：${(list.isEmpty ? '第一个可用' : list.map((i) => i.name).join(","))}，请根据设备支持情况与需求调整';
-    },
+    getSubtitle: () =>
+        '首选解码格式：${(Pref.preferCodecs.map((i) => i.name).join(","))}，请根据设备支持情况与需求调整',
     onTap: _showCodecsDialog,
+  ),
+  NormalModel(
+    title: '蜂窝网络首选解码格式',
+    leading: const Icon(Icons.movie_creation_outlined),
+    getSubtitle: () =>
+        '首选解码格式：${(Pref.preferCodecsCellular.map((i) => i.name).join(","))}，请根据设备支持情况与需求调整',
+    onTap: _showCellularCodecsDialog,
   ),
   if (kDebugMode || Platform.isAndroid)
     NormalModel(
@@ -356,13 +361,32 @@ Future<void> _showCodecsDialog(
       values: {for (final e in VideoDecodeFormatType.values) e: e.name},
     ),
   );
-  if (res != null) {
-    await (res.isEmpty
-        ? GStorage.setting.delete(SettingBoxKey.preferCodecs)
-        : GStorage.setting.put(
-            SettingBoxKey.preferCodecs,
-            res.map((i) => i.name).toList(),
-          ));
+  if (res != null && res.isNotEmpty) {
+    await GStorage.setting.put(
+      SettingBoxKey.preferCodecs,
+      res.map((i) => i.name).toList(),
+    );
+    setState();
+  }
+}
+
+Future<void> _showCellularCodecsDialog(
+  BuildContext context,
+  VoidCallback setState,
+) async {
+  final res = await showDialog<List<VideoDecodeFormatType>>(
+    context: context,
+    builder: (context) => OrderedMultiSelectDialog<VideoDecodeFormatType>(
+      title: '蜂窝网络首选解码格式',
+      initValues: Pref.preferCodecsCellular,
+      values: {for (final e in VideoDecodeFormatType.values) e: e.name},
+    ),
+  );
+  if (res != null && res.isNotEmpty) {
+    await GStorage.setting.put(
+      SettingBoxKey.preferCodecsCellular,
+      res.map((i) => i.name).toList(),
+    );
     setState();
   }
 }
