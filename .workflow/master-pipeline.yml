@@ -42,10 +42,14 @@ stages:
         commands:
           - |
             set -e
-            # 容器启动时 WORKDIR 可能尚未挂载，先修正到代码工作区
-            for d in "$WORKSPACE" $(find /root/workspace -maxdepth 2 -name .git -type d -printf '%h\n' 2>/dev/null | head -1); do
-              if [ -n "$d" ] && [ -d "$d" ]; then cd "$d"; break; fi
-            done
+            # 云端编译插件不会自动检出代码，工作区默认为空：先克隆当前仓库
+            if [ ! -f pubspec.yaml ]; then
+              # 工作区形如 /root/workspace/{owner}/{repo}，取最后两级
+              OWNER_REPO=$(pwd | awk -F/ '{print $(NF-1)"/"$NF}')
+              BRANCH="${GITEE_BRANCH:-release}"
+              echo "检出代码: https://gitee.com/${OWNER_REPO}.git (分支 ${BRANCH})"
+              git clone --depth 1 -b "${BRANCH}" "https://gitee.com/${OWNER_REPO}.git" .
+            fi
             pwd
             bash lib/scripts/gitee_android_build.sh
         artifacts:
