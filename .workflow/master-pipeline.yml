@@ -38,15 +38,15 @@
 # =============================================================================
 
 version: 1.0
-name: PiliPlus Android & Linux Build
+displayName: PiliPlus Android & Linux Build
 
 stages:
-  - name: build
+  - displayName: build
     jobs:
-      - name: android-linux
+      - displayName: android-linux
         steps:
           # 对应 GitHub 的 setup-java + flutter-action + Linux 依赖安装
-          - name: 环境准备（Java17 / PowerShell / Flutter / Android SDK / Linux 依赖）
+          - displayName: 环境准备（Java17 / PowerShell / Flutter / Android SDK / Linux 依赖）
             run: |
               set -e
 
@@ -114,7 +114,7 @@ stages:
               echo "环境准备完成"
 
           # 对应 GitHub 的 "Set and Extract version"（lib/scripts/build.ps1 android）
-          - name: 设置版本号
+          - displayName: 设置版本号
             run: |
               set -e
               set -a; . "$HOME/.piliplus_env.sh"; set +a
@@ -125,13 +125,13 @@ stages:
               cat .piliplus_github_env
 
           # 对应 GitHub 的 "Apply Patch"（continue-on-error: true -> || true）
-          - name: 应用补丁
+          - displayName: 应用补丁
             run: |
               set -a; . "$HOME/.piliplus_env.sh"; set +a
               pwsh -File lib/scripts/patch.ps1 android || true
 
           # 对应 GitHub 的 "Write key"
-          - name: 写入签名配置
+          - displayName: 写入签名配置
             run: |
               set -e
               if [ -n "$SIGN_KEYSTORE_BASE64" ]; then
@@ -144,14 +144,14 @@ stages:
               fi
 
           # 对应 GitHub 的 "Flutter Build Release Apk"
-          - name: 构建 Android APK
+          - displayName: 构建 Android APK
             run: |
               set -e
               set -a; . "$HOME/.piliplus_env.sh"; set +a
               flutter build apk --release --split-per-abi --dart-define-from-file=pili_release.json --pub
 
           # 对应 GitHub 的 "Rename"
-          - name: 重命名 APK
+          - displayName: 重命名 APK
             run: |
               set -e
               version=$(sed -n 's/^version=//p' .piliplus_github_env)
@@ -162,7 +162,7 @@ stages:
               ls -lh PiliPlus_android_*.apk
 
           # 对应 GitHub 的 linux_x64.yml（仅保留 tar.gz；deb/rpm/AppImage 步骤可照抄追加）
-          - name: 构建 Linux x64 并打包 tar.gz
+          - displayName: 构建 Linux x64 并打包 tar.gz
             run: |
               set -e
               set -a; . "$HOME/.piliplus_env.sh"; set +a
@@ -171,7 +171,7 @@ stages:
               tar -zcvf "PiliPlus_linux_${version}_amd64.tar.gz" -C build/linux/x64/release/bundle .
               ls -lh "PiliPlus_linux_${version}_amd64.tar.gz"
 
-          - name: 产物清单与发版提示
+          - displayName: 产物清单与发版提示
             run: |
               ls -lh PiliPlus_android_*.apk PiliPlus_linux_*.tar.gz
               echo
@@ -187,7 +187,7 @@ stages:
 #   参考 https://help.gitee.com/gitee-go/plugin/deploy 填写插件标识与参数，
 #   例如（以官方文档为准）：
 #
-#   - name: 创建 Release
+#   - displayName: 创建 Release
 #     uses: <官方文档中的 Release 插件标识>
 #     with:
 #       tag: v<版本号>
