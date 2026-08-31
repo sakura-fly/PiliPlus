@@ -1,0 +1,199 @@
+# =============================================================================
+# PiliPlus —— Gitee Go（码云流水线）工作流
+#
+# 由 GitHub Actions 的 .github/workflows/build.yml 与 linux_x64.yml 改写。
+# Gitee Go 是 Gitee 官方 CI/CD 服务（码云版的 GitHub Actions）。
+#
+# 【触发方式（重要）】
+# Gitee Go 通过 .workflow 目录下的"文件名"决定触发类型（区别于 GitHub 的 on.push）：
+#   master-pipeline.yml   -> master 分支 push 触发（本文件）
+#   pr-pipeline.yml       -> 合并请求(PR)触发
+#   tag-pipeline.yml      -> 推送 Tag 触发
+#   custom-pipeline.yml   -> 手动触发（对应 GitHub 的 workflow_dispatch）
+#
+# 仓库 GitHub 侧在 release 分支发版；若要在 release 分支自动构建：
+#   1) 把本文件复制为 BranchPipeline.yml（Gitee Go Maven 官方示例采用此文件名），
+#      或在 Gitee Go 控制台新建流水线并绑定 release 分支；
+#   2) 或在控制台使用手动触发（custom-pipeline.yml）。
+#
+# 【与 GitHub Actions 的差异 / 限制】
+# 1. Gitee Go 免费版只提供 Linux 执行器：Android + Linux 可构建；
+#    macOS / iOS / Windows 产物无法免费构建（iOS 需 macOS 签名、Windows 需
+#    Windows 执行器，需企业版或自建执行器）。
+# 2. Gitee Go 会自动把仓库代码检出到工作区，无需显式 checkout 步骤。
+# 3. 没有 GITHUB_ENV：lib/scripts/build.ps1 会写 GITHUB_ENV，这里把
+#    GITHUB_ENV 指向本地文件来兼容该脚本，后续步骤从该文件读取 version。
+# 4. 每个 step 是独立 shell，环境变量不跨步骤保留：公共环境写入
+#    $HOME/.piliplus_env.sh，每个步骤开头 source 它。
+# 5. 敏感信息（签名）请配置为 Gitee Go 控制台的「私密环境变量」：
+#    SIGN_KEYSTORE_BASE64 / KEYSTORE_PASSWORD / KEY_ALIAS / KEY_PASSWORD，
+#    运行时自动注入为进程环境变量（下方脚本直接以 $VAR 读取）。
+# 6. 产物归档：构建产物保留在工作区，请在 Gitee Go 控制台「构建产物」中
+#    配置归档路径（如 PiliPlus_android_*.apk），运行结束后可下载。
+#
+# 参考文档：
+#   https://help.gitee.com/gitee-go/pipeline/trigger
+#   https://help.gitee.com/gitee-go/pipeline/parameter
+#   https://help.gitee.com/gitee-go/plugin/deploy
+# =============================================================================
+
+version: 1.0
+name: PiliPlus Android & Linux Build
+
+stages:
+  - name: build
+    jobs:
+      - name: android-linux
+        steps:
+          # 对应 GitHub 的 setup-java + flutter-action + Linux 依赖安装
+          - name: 环境准备（Java17 / PowerShell / Flutter / Android SDK / Linux 依赖）
+            run: |
+              set -e
+
+              sudo apt-get update -qq
+              sudo apt-get install -y -qq curl wget unzip zip git tar \
+                openjdk-17-jdk-headless \
+                libgtk-3-dev libayatana-appindicator3-dev webkit2gtk-4.1 \
+                libasound2-dev libmpv-dev
+
+              # PowerShell：lib/scripts/build.ps1 / patch.ps1 需要
+              if ! command -v pwsh >/dev/null 2>&1; then
+                echo "尝试通过 Microsoft 仓库安装 PowerShell ..."
+                curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | sudo gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg
+                echo "deb [arch=amd64 signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/ubuntu/22.04/prod jammy main" | sudo tee /etc/apt/sources.list.d/microsoft.list >/dev/null
+                sudo apt-get update -qq
+                sudo apt-get install -y -qq powershell || {
+                  echo "仓库安装失败，改用 GitHub Release 压缩包 ..."
+                  curl -fsSL -o /tmp/pwsh.tar.gz https://github.com/PowerShell/PowerShell/releases/download/v7.4.6/powershell-7.4.6-linux-x64.tar.gz
+                  sudo mkdir -p /opt/microsoft/powershell/7
+                  sudo tar zxf /tmp/pwsh.tar.gz -C /opt/microsoft/powershell/7
+                  sudo chmod +x /opt/microsoft/powershell/7/pwsh
+                  sudo ln -sf /opt/microsoft/powershell/7/pwsh /usr/local/bin/pwsh
+                }
+              fi
+              command -v pwsh
+
+              # Flutter：与 pubspec.yaml 中的 flutter 版本保持一致
+              if [ ! -d "$HOME/flutter" ]; then
+                git clone -q --depth 1 -b 3.47.2 https://github.com/flutter/flutter.git "$HOME/flutter"
+              fi
+              export PATH="$HOME/flutter/bin:$PATH"
+              flutter config --no-analytics
+
+              # Android SDK：执行器未自带时安装 commandline-tools
+              if [ -z "${ANDROID_HOME:-}" ] && [ -z "${ANDROID_SDK_ROOT:-}" ]; then
+                export ANDROID_HOME="$HOME/android-sdk"
+                mkdir -p "$ANDROID_HOME/cmdline-tools"
+                curl -fsSL -o /tmp/cmdtools.zip https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
+                unzip -q /tmp/cmdtools.zip -d "$ANDROID_HOME/cmdline-tools"
+                mv "$ANDROID_HOME/cmdline-tools/cmdline-tools" "$ANDROID_HOME/cmdline-tools/latest"
+              fi
+              export ANDROID_HOME="${ANDROID_HOME:-$HOME/android-sdk}"
+              export ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+
+              # 接受许可并安装 platform-tools；其余 platform/build-tools 由 Gradle 按需下载
+              SDKMANAGER=""
+              for c in "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"; do
+                [ -x "$c" ] && SDKMANAGER="$c" && break
+              done
+              if [ -n "$SDKMANAGER" ]; then
+                yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
+                "$SDKMANAGER" "platform-tools" >/dev/null
+              else
+                echo "警告：未找到 sdkmanager，构建时由 Gradle 按需下载 SDK 组件"
+              fi
+
+              # 保存公共环境，供后续每个 step 开头 source（Gitee Go 步骤间环境不共享）
+              ANDROID_HOME_DEF="${ANDROID_HOME:-$HOME/android-sdk}"
+              {
+                echo 'export PATH="$HOME/flutter/bin:$PATH"'
+                echo "export ANDROID_HOME=$ANDROID_HOME_DEF"
+                echo 'export ANDROID_SDK_ROOT="$ANDROID_HOME"'
+                echo 'export JAVA_HOME="$(dirname "$(dirname "$(readlink -f "$(command -v java)")")")"'
+              } > "$HOME/.piliplus_env.sh"
+              echo "环境准备完成"
+
+          # 对应 GitHub 的 "Set and Extract version"（lib/scripts/build.ps1 android）
+          - name: 设置版本号
+            run: |
+              set -e
+              set -a; . "$HOME/.piliplus_env.sh"; set +a
+              # build.ps1 会写 GITHUB_ENV，这里指到本地文件以兼容该脚本
+              export GITHUB_ENV="$PWD/.piliplus_github_env"
+              pwsh -File lib/scripts/build.ps1 android
+              echo "--- 版本信息 ---"
+              cat .piliplus_github_env
+
+          # 对应 GitHub 的 "Apply Patch"（continue-on-error: true -> || true）
+          - name: 应用补丁
+            run: |
+              set -a; . "$HOME/.piliplus_env.sh"; set +a
+              pwsh -File lib/scripts/patch.ps1 android || true
+
+          # 对应 GitHub 的 "Write key"
+          - name: 写入签名配置
+            run: |
+              set -e
+              if [ -n "$SIGN_KEYSTORE_BASE64" ]; then
+                echo "$SIGN_KEYSTORE_BASE64" | base64 --decode > android/app/key.jks
+                printf 'storeFile=key.jks\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
+                  "$KEYSTORE_PASSWORD" "$KEY_ALIAS" "$KEY_PASSWORD" > android/key.properties
+                echo "签名文件已写入"
+              else
+                echo "未配置 SIGN_KEYSTORE_BASE64，将构建未签名 APK"
+              fi
+
+          # 对应 GitHub 的 "Flutter Build Release Apk"
+          - name: 构建 Android APK
+            run: |
+              set -e
+              set -a; . "$HOME/.piliplus_env.sh"; set +a
+              flutter build apk --release --split-per-abi --dart-define-from-file=pili_release.json --pub
+
+          # 对应 GitHub 的 "Rename"
+          - name: 重命名 APK
+            run: |
+              set -e
+              version=$(sed -n 's/^version=//p' .piliplus_github_env)
+              for file in build/app/outputs/flutter-apk/app-*-release.apk; do
+                abi=$(echo "$file" | sed -E 's|.*app-(.*)-release\.apk|\1|')
+                mv "$file" "PiliPlus_android_${version}_${abi}.apk"
+              done
+              ls -lh PiliPlus_android_*.apk
+
+          # 对应 GitHub 的 linux_x64.yml（仅保留 tar.gz；deb/rpm/AppImage 步骤可照抄追加）
+          - name: 构建 Linux x64 并打包 tar.gz
+            run: |
+              set -e
+              set -a; . "$HOME/.piliplus_env.sh"; set +a
+              version=$(sed -n 's/^version=//p' .piliplus_github_env)
+              flutter build linux --release --dart-define-from-file=pili_release.json --no-pub
+              tar -zcvf "PiliPlus_linux_${version}_amd64.tar.gz" -C build/linux/x64/release/bundle .
+              ls -lh "PiliPlus_linux_${version}_amd64.tar.gz"
+
+          - name: 产物清单与发版提示
+            run: |
+              ls -lh PiliPlus_android_*.apk PiliPlus_linux_*.tar.gz
+              echo
+              echo "产物已生成。请在 Gitee Go 控制台「构建产物」中配置归档路径："
+              echo "  PiliPlus_android_*.apk"
+              echo "  PiliPlus_linux_*.tar.gz"
+              echo
+              echo "自动发版：可参考 Gitee Go 官方 Release 插件（https://help.gitee.com/gitee-go/plugin/deploy），"
+              echo "或改用 tag-pipeline.yml + 码云 OpenAPI 创建 Release。"
+
+# ---- 自动发版（可选，按需启用）----
+# Gitee Go 官方提供 Release 插件，用法类似 softprops/action-gh-release：
+#   参考 https://help.gitee.com/gitee-go/plugin/deploy 填写插件标识与参数，
+#   例如（以官方文档为准）：
+#
+#   - name: 创建 Release
+#     uses: <官方文档中的 Release 插件标识>
+#     with:
+#       tag: v<版本号>
+#       files: |
+#         PiliPlus_android_*.apk
+#         PiliPlus_linux_*.tar.gz
+#
+# 注意：GitHub 侧 build.yml 里的 auto_tag（自动生成 v 版本 tag）在 Gitee Go
+# 没有对应机制，发版前需手动打 tag，或用 tag-pipeline.yml 触发构建后发版。
