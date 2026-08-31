@@ -32,7 +32,7 @@ stages:
       # 1. 准备环境：JDK17 / Flutter（版本取自 pubspec.yaml）/ Android SDK
       #    PowerShell 仅用于运行项目自带的补丁脚本 lib/scripts/patch.ps1
       # ---------------------------------------------------------------
-      - step: shell
+      - step: shell-script-run
         displayName: 准备环境
         run: |
           set -e
@@ -87,7 +87,7 @@ stages:
       # ---------------------------------------------------------------
       # 2. 签名密钥：KEYGEN_SEED 前 32 位 -> SHA-256 -> 口令 -> keytool
       # ---------------------------------------------------------------
-      - step: shell
+      - step: shell-script-run
         displayName: 由 KEYGEN_SEED 生成签名密钥
         run: |
           set -e
@@ -124,7 +124,7 @@ stages:
       # 3. 版本信息：versionCode=提交数，versionName=pubspec 版本-短哈希，
       #    生成 pili_release.json（供 --dart-define-from-file 使用）
       # ---------------------------------------------------------------
-      - step: shell
+      - step: shell-script-run
         displayName: 生成版本信息
         run: |
           set -e
@@ -146,7 +146,7 @@ stages:
       # ---------------------------------------------------------------
       # 4. 项目自带补丁（patch.ps1 为项目构建必需步骤，失败不中断）
       # ---------------------------------------------------------------
-      - step: shell
+      - step: shell-script-run
         displayName: 应用项目补丁
         run: |
           set -a; . "$HOME/.piliplus_env.sh"; set +a
@@ -157,7 +157,7 @@ stages:
       # ---------------------------------------------------------------
       # 5. 构建 APK 并重命名
       # ---------------------------------------------------------------
-      - step: shell
+      - step: shell-script-run
         displayName: 构建并重命名 APK
         run: |
           set -e
@@ -175,7 +175,7 @@ stages:
       # ---------------------------------------------------------------
       # 6. 产物提示
       # ---------------------------------------------------------------
-      - step: shell
+      - step: shell-script-run
         displayName: 产物提示
         run: |
           echo "构建完成，产物："
