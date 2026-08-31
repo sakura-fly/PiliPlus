@@ -1,184 +1,55 @@
 # =============================================================================
-# PiliPlus —— Gitee Go 流水线：打包 Android Release APK
-# 全新编写，不参考 GitHub Actions；遵循 Gitee Go 稳定结构
-# （.workflow 目录 + 文件名触发 + version/displayName/stages/steps）。
+# PiliPlus —— Gitee Go 流水线：打包 Android APK
+# 按 Gitee Go 官方文档 schema 编写（help.gitee.com/gitee-go）：
+#   流水线: version/name(标识)/displayName(名称)
+#   阶段:   name/displayName/strategy/trigger/executor
+#   任务:   step(插件标识)/name(任务标识)/displayName/插件参数
 #
-# 签名方案：
-#   通用变量 KEYGEN_SEED 取前 32 位作为种子，用 SHA-256 派生
-#   storePassword / keyPassword / keyAlias，再用 keytool 生成 key.jks。
-#   同一 KEYGEN_SEED = 同一签名密钥 = 用户可覆盖升级。
-#   注意：KEYGEN_SEED 一旦用于发版就不要再修改，否则旧版本无法升级。
+# 构建方案：Gitee Go 官方插件没有 Flutter/Android 专用插件，
+#   使用云端编译插件 build@gcc（Ubuntu 20.04 执行器）+ 自定义命令
+#   调用 lib/scripts/gitee_android_build.sh 完成整条构建链。
 #
-# 触发方式（Gitee Go 按文件名决定触发类型）：
-#   master-pipeline.yml -> master 分支 push（本文件）
-#   tag-pipeline.yml    -> 推送 Tag（推荐发版）
-#   custom-pipeline.yml -> 手动触发
+# 签名：全局参数 KEYGEN_SEED 取前 32 位 -> SHA-256 -> keytool 生成 key.jks
+#   （同一种子 = 同一签名，KEYGEN_SEED 发版后不要改动）
 #
-# 控制台配置：
-#   1. 通用变量：KEYGEN_SEED（建议勾选"私密"）
-#   2. 构建产物归档：PiliPlus_android_*.apk
-#   3. 产物说明：arm64-v8a / armeabi-v7a / x86_64 三个 ABI 包
-#
-# 参考：https://help.gitee.com/gitee-go/pipeline/trigger
+# 产物：build@gcc 暂存 apk/（7 天），publish@general_artifacts 上传制品库。
 # =============================================================================
 
-version: 1.0
+version: '1.0'
+name: piliplus-android-build
 displayName: PiliPlus Android 打包
 
+triggers:
+  push:
+    branches:
+      prefix:
+        - release
+    tags:
+      prefix:
+        - v
+
 stages:
-  - displayName: 构建
+  - name: build
+    displayName: 构建
+    strategy: naturally
+    trigger: auto
+    executor: []
     steps:
-      # ---------------------------------------------------------------
-      # 1. 准备环境：JDK17 / Flutter（版本取自 pubspec.yaml）/ Android SDK
-      #    PowerShell 仅用于运行项目自带的补丁脚本 lib/scripts/patch.ps1
-      # ---------------------------------------------------------------
-      - step: shell-script-run
-        displayName: 准备环境
-        run: |
-          set -e
-          SUDO=""
-          [ "$(id -u)" -eq 0 ] || SUDO=sudo
-
-          # 基础依赖
-          $SUDO apt-get update -qq
-          $SUDO apt-get install -y -qq curl unzip zip git openjdk-17-jdk-headless
-
-          # PowerShell（仅项目 patch 脚本需要），失败回退官方压缩包
-          if ! command -v pwsh >/dev/null 2>&1; then
-            curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | $SUDO gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg
-            echo "deb [arch=amd64 signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/ubuntu/22.04/prod jammy main" | $SUDO tee /etc/apt/sources.list.d/microsoft.list >/dev/null
-            $SUDO apt-get update -qq
-            $SUDO apt-get install -y -qq powershell || {
-              curl -fsSL -o /tmp/pwsh.tar.gz https://github.com/PowerShell/PowerShell/releases/download/v7.4.6/powershell-7.4.6-linux-x64.tar.gz
-              $SUDO mkdir -p /opt/microsoft/powershell/7
-              $SUDO tar zxf /tmp/pwsh.tar.gz -C /opt/microsoft/powershell/7
-              $SUDO ln -sf /opt/microsoft/powershell/7/pwsh /usr/local/bin/pwsh
-            }
-          fi
-
-          # Flutter：版本与 pubspec.yaml 的 flutter 字段保持一致
-          if [ ! -d "$HOME/flutter" ]; then
-            git clone -q --depth 1 -b 3.47.2 https://github.com/flutter/flutter.git "$HOME/flutter"
-          fi
-          export PATH="$HOME/flutter/bin:$PATH"
-
-          # Android SDK：执行器未自带时安装
-          if [ -z "${ANDROID_HOME:-}" ] && [ -z "${ANDROID_SDK_ROOT:-}" ]; then
-            export ANDROID_HOME="$HOME/android-sdk"
-            mkdir -p "$ANDROID_HOME/cmdline-tools"
-            curl -fsSL -o /tmp/cmdtools.zip https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
-            unzip -q /tmp/cmdtools.zip -d "$ANDROID_HOME/cmdline-tools"
-            mv "$ANDROID_HOME/cmdline-tools/cmdline-tools" "$ANDROID_HOME/cmdline-tools/latest"
-          fi
-          export ANDROID_HOME="${ANDROID_HOME:-$HOME/android-sdk}"
-          if [ -x "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ]; then
-            yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null 2>&1 || true
-            "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platform-tools" >/dev/null
-          fi
-
-          # 保存公共环境，后续步骤开头 source（Gitee Go 步骤间环境不共享）
-          printf '%s\n' \
-            'export PATH="$HOME/flutter/bin:$PATH"' \
-            'export ANDROID_HOME="${ANDROID_HOME:-$HOME/android-sdk}"' \
-            'export ANDROID_SDK_ROOT="$ANDROID_HOME"' \
-            'export JAVA_HOME="$(dirname "$(dirname "$(readlink -f "$(command -v java)")")")"' \
-            > "$HOME/.piliplus_env.sh"
-
-      # ---------------------------------------------------------------
-      # 2. 签名密钥：KEYGEN_SEED 前 32 位 -> SHA-256 -> 口令 -> keytool
-      # ---------------------------------------------------------------
-      - step: shell-script-run
-        displayName: 由 KEYGEN_SEED 生成签名密钥
-        run: |
-          set -e
-          # 通用变量 KEYGEN_SEED 取前 32 位作为种子
-          SEED=$(printf '%s' "$KEYGEN_SEED" | tr -d '\n\r' | head -c 32)
-          if [ -z "$SEED" ]; then
-            echo "错误：未配置通用变量 KEYGEN_SEED（Gitee Go 控制台 -> 通用变量）" >&2
-            exit 1
-          fi
-
-          # 派生口令：SHA-256 十六进制前 16 位 / 后 16 位
-          HASH=$(printf '%s' "$SEED" | sha256sum | cut -d' ' -f1)
-          STORE_PASS=$(printf '%s' "$HASH" | cut -c1-16)
-          KEY_PASS=$(printf '%s' "$HASH" | cut -c17-32)
-          ALIAS=piliplus
-
-          # 生成密钥库（已存在则跳过，保持签名稳定）
-          if [ ! -f android/app/key.jks ]; then
-            keytool -genkeypair -keystore android/app/key.jks -storetype JKS \
-              -alias "$ALIAS" -keyalg RSA -keysize 2048 -validity 36500 \
-              -storepass "$STORE_PASS" -keypass "$KEY_PASS" \
-              -dname "CN=PiliPlus, OU=PiliPlus, O=PiliPlus, C=CN" -noprompt
-            echo "已由 KEYGEN_SEED 生成签名密钥 android/app/key.jks"
-          else
-            echo "检测到已有 key.jks，跳过生成"
-          fi
-
-          # Gradle 签名配置
-          printf 'storeFile=key.jks\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
-            "$STORE_PASS" "$ALIAS" "$KEY_PASS" > android/key.properties
-          echo "android/key.properties 已写入"
-
-      # ---------------------------------------------------------------
-      # 3. 版本信息：versionCode=提交数，versionName=pubspec 版本-短哈希，
-      #    生成 pili_release.json（供 --dart-define-from-file 使用）
-      # ---------------------------------------------------------------
-      - step: shell-script-run
-        displayName: 生成版本信息
-        run: |
-          set -e
-          set -a; . "$HOME/.piliplus_env.sh"; set +a
-
-          VERSION_NAME=$(sed -nE 's/^version:[[:space:]]*([0-9.]+).*/\1/p' pubspec.yaml | head -1)
-          VERSION_CODE=$(git rev-list --count HEAD)
-          COMMIT_HASH=$(git rev-parse HEAD)
-          SHORT_HASH=$(printf '%s' "$COMMIT_HASH" | cut -c1-9)
-          ANDROID_VERSION="$VERSION_NAME-$SHORT_HASH"
-          BUILD_TIME=$(date +%s)
-
-          printf '{"pili.name":"%s","pili.code":"%s","pili.hash":"%s","pili.time":"%s"}\n' \
-            "$ANDROID_VERSION" "$VERSION_CODE" "$COMMIT_HASH" "$BUILD_TIME" > pili_release.json
-          sed -i -E "s/^version: .*/version: $ANDROID_VERSION+$VERSION_CODE/" pubspec.yaml
-          printf 'version=%s+%s\n' "$ANDROID_VERSION" "$VERSION_CODE" > .piliplus_github_env
-          echo "version: $ANDROID_VERSION+$VERSION_CODE"
-
-      # ---------------------------------------------------------------
-      # 4. 项目自带补丁（patch.ps1 为项目构建必需步骤，失败不中断）
-      # ---------------------------------------------------------------
-      - step: shell-script-run
-        displayName: 应用项目补丁
-        run: |
-          set -a; . "$HOME/.piliplus_env.sh"; set +a
-          export GITHUB_WORKSPACE="$PWD"
-          export FLUTTER_ROOT="$HOME/flutter"
-          pwsh -File lib/scripts/patch.ps1 android || true
-
-      # ---------------------------------------------------------------
-      # 5. 构建 APK 并重命名
-      # ---------------------------------------------------------------
-      - step: shell-script-run
-        displayName: 构建并重命名 APK
-        run: |
-          set -e
-          set -a; . "$HOME/.piliplus_env.sh"; set +a
-
-          flutter build apk --release --split-per-abi --dart-define-from-file=pili_release.json --pub
-
-          version=$(sed -n 's/^version=//p' .piliplus_github_env)
-          for file in build/app/outputs/flutter-apk/app-*-release.apk; do
-            abi=$(echo "$file" | sed -E 's|.*app-(.*)-release\.apk|\1|')
-            mv "$file" "PiliPlus_android_${version}_${abi}.apk"
-          done
-          ls -lh PiliPlus_android_*.apk
-
-      # ---------------------------------------------------------------
-      # 6. 产物提示
-      # ---------------------------------------------------------------
-      - step: shell-script-run
-        displayName: 产物提示
-        run: |
-          echo "构建完成，产物："
-          ls -lh PiliPlus_android_*.apk
-          echo
-          echo "请在 Gitee Go 控制台「构建产物」配置归档：PiliPlus_android_*.apk"
+      - step: build@gcc
+        name: build-flutter-android
+        displayName: 构建 Flutter Android APK
+        gccVersion: 10.3
+        commands:
+          - bash
+          - lib/scripts/gitee_android_build.sh
+        artifacts:
+          - name: BUILD_ARTIFACT
+            path:
+              - ./apk
+      - step: publish@general_artifacts
+        name: upload-artifacts
+        displayName: 上传制品
+        dependsOn: build-flutter-android
+        dependArtifact: BUILD_ARTIFACT
+        artifactRepository: default
+        artifactName: piliplus-apk
