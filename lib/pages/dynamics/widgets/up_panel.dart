@@ -104,18 +104,18 @@ class _UpPanelState extends State<UpPanel> {
         SliverToBoxAdapter(
           child: upItemBuild(theme, UpItem(face: '', uname: '全部动态', mid: -1)),
         ),
-        SliverToBoxAdapter(
-          child: Obx(
-            () => upItemBuild(
-              theme,
-              UpItem(
-                uname: '我',
-                face: controller.accountService.face.value,
-                mid: Accounts.main.mid,
-              ),
-            ),
-          ),
-        ),
+//         SliverToBoxAdapter(
+//           child: Obx(
+//             () => upItemBuild(
+//               theme,
+//               UpItem(
+//                 uname: '我',
+//                 face: controller.accountService.face.value,
+//                 mid: Accounts.main.mid,
+//               ),
+//             ),
+//           ),
+//         ),
         if (upList != null && upList.isNotEmpty)
           SliverList.builder(
             itemCount: upList.length,

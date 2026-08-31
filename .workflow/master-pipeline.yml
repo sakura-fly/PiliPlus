@@ -40,8 +40,14 @@ stages:
         displayName: 构建 Flutter Android APK
         gccVersion: 10.3
         commands:
-          - bash
-          - lib/scripts/gitee_android_build.sh
+          - |
+            set -e
+            # 容器启动时 WORKDIR 可能尚未挂载，先修正到代码工作区
+            for d in "$WORKSPACE" $(find /root/workspace -maxdepth 2 -name .git -type d -printf '%h\n' 2>/dev/null | head -1); do
+              if [ -n "$d" ] && [ -d "$d" ]; then cd "$d"; break; fi
+            done
+            pwd
+            bash lib/scripts/gitee_android_build.sh
         artifacts:
           - name: BUILD_ARTIFACT
             path:
