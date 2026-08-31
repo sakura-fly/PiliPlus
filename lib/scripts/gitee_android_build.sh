@@ -17,7 +17,10 @@ SUDO=""
 [ "$(id -u)" -eq 0 ] || SUDO=sudo
 
 echo "==> 1/7 安装基础依赖"
+export DEBIAN_FRONTEND=noninteractive
 $SUDO apt-get update -qq
+# 最小化容器常缺 man 目录，会导致 openjdk 的 update-alternatives 安装失败
+$SUDO mkdir -p /usr/share/man/man1 /usr/share/man/man5 /usr/share/man/man6 /usr/share/man/man7 /usr/share/man/man8
 $SUDO apt-get install -y -qq curl wget unzip zip xz-utils git openjdk-17-jdk-headless
 
 echo "==> 2/7 安装 PowerShell（项目 patch 脚本需要）"
