@@ -63,3 +63,6 @@ stages:
         dependArtifact: BUILD_ARTIFACT
         artifactRepository: default
         artifactName: piliplus-apk
+variables:
+  global:
+    - KEYGEN_SEED
