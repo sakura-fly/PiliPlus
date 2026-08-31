@@ -26,8 +26,9 @@ $SUDO apt-get install -y -qq curl wget unzip zip xz-utils git gnupg openjdk-17-j
 echo "==> 2/7 安装 PowerShell（项目 patch 脚本需要）"
 if ! command -v pwsh >/dev/null 2>&1; then
   curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | $SUDO gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg
-  CODENAME=$(. /etc/os-release && printf '%s' "$VERSION_CODENAME")
-  echo "deb [arch=amd64 signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/ubuntu/${CODENAME}/prod ${CODENAME} main" | $SUDO tee /etc/apt/sources.list.d/microsoft.list >/dev/null
+  # URL 用数字版本号，发行版字段用代号（如 22.04 + jammy）
+  . /etc/os-release
+  echo "deb [arch=amd64 signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/ubuntu/${VERSION_ID}/prod ${VERSION_CODENAME} main" | $SUDO tee /etc/apt/sources.list.d/microsoft.list >/dev/null
   $SUDO apt-get update -qq
   $SUDO apt-get install -y -qq powershell || {
     echo "MS 仓库安装失败，改用官方压缩包 ..."
