@@ -24,6 +24,7 @@ triggers:
     branches:
       prefix:
         - release
+        - g
     tags:
       prefix:
         - v
