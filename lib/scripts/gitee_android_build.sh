@@ -121,10 +121,53 @@ sed -i -E "s/^version: .*/version: $ANDROID_VERSION+$VERSION_CODE/" pubspec.yaml
 echo "version: $ANDROID_VERSION+$VERSION_CODE"
 
 echo "==> 6/7 应用项目补丁（失败不中断）"
+# patch.ps1 硬编码查找 ~/.pub-cache/hosted/pub.dev，而镜像源缓存位于 pub.flutter-io.cn 下。
+# 注意：此刻目录尚未生成（pub get 在 patch.ps1 内部执行），悬空链接会在目录创建后自动生效。
+mkdir -p "$HOME/.pub-cache/hosted"
+if [ ! -e "$HOME/.pub-cache/hosted/pub.dev" ]; then
+  ln -s "$HOME/.pub-cache/hosted/pub.flutter-io.cn" "$HOME/.pub-cache/hosted/pub.dev"
+  echo "已建立 pub 缓存符号链接: pub.dev -> pub.flutter-io.cn"
+fi
 export GITHUB_WORKSPACE="$PWD"
 pwsh -File lib/scripts/patch.ps1 android || true
 
 echo "==> 7/7 构建并重命名 APK"
+
+# Gradle 发行版改走腾讯镜像（services.gradle.org 连接超时）
+WRAPPER_PROP=android/gradle/wrapper/gradle-wrapper.properties
+if [ -f "$WRAPPER_PROP" ]; then
+  sed -i 's|services.gradle.org/distributions|mirrors.cloud.tencent.com/gradle|' "$WRAPPER_PROP"
+  echo "Gradle 发行版镜像: $(grep -h distributionUrl "$WRAPPER_PROP" || true)"
+fi
+
+# Gradle 依赖仓库追加阿里云镜像（init 脚本方式，不改项目文件；阿里云缺包时自动回落到官方源）
+mkdir -p "$HOME/.gradle/init.d"
+cat > "$HOME/.gradle/init.d/mirror.gradle" <<'GRADLE_EOF'
+allprojects {
+    buildscript {
+        repositories {
+            maven { url 'https://maven.aliyun.com/repository/google' }
+            maven { url 'https://maven.aliyun.com/repository/central' }
+            maven { url 'https://maven.aliyun.com/repository/gradle-plugin' }
+            maven { url 'https://maven.aliyun.com/repository/public' }
+        }
+    }
+    repositories {
+        maven { url 'https://maven.aliyun.com/repository/google' }
+        maven { url 'https://maven.aliyun.com/repository/central' }
+        maven { url 'https://maven.aliyun.com/repository/public' }
+    }
+}
+settingsEvaluated { settings ->
+    settings.pluginManagement.repositories {
+        maven { url 'https://maven.aliyun.com/repository/google' }
+        maven { url 'https://maven.aliyun.com/repository/gradle-plugin' }
+        maven { url 'https://maven.aliyun.com/repository/central' }
+    }
+}
+GRADLE_EOF
+echo "已写入 Gradle 镜像 init 脚本"
+
 flutter build apk --release --split-per-abi --dart-define-from-file=pili_release.json --pub
 
 mkdir -p apk
