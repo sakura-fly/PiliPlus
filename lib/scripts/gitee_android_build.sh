@@ -41,12 +41,38 @@ fi
 command -v pwsh
 
 echo "==> 3/7 准备 Flutter 与 Android SDK"
+# 增大 Git 缓冲区，降低大仓库克隆时 RPC failed / early EOF 的概率
+git config --global http.postBuffer 524288000
+git config --global http.lowSpeedLimit 1000
+git config --global http.lowSpeedTime 60
+
 export FLUTTER_ROOT="$HOME/flutter"
 if [ ! -d "$FLUTTER_ROOT" ]; then
   # 版本与 pubspec.yaml 的 flutter 字段保持一致
-  git clone -q --depth 1 -b 3.47.2 https://github.com/flutter/flutter.git "$FLUTTER_ROOT"
+  # 优先 GitHub，失败自动切换 Gitee 镜像（国内 CI 访问 GitHub 经常断流）
+  FLUTTER_VERSION=3.47.2
+  FLUTTER_CLONE_OK=0
+  for url in \
+      "https://github.com/flutter/flutter.git" \
+      "https://gitee.com/mirrors/Flutter.git"
+  do
+    echo "尝试克隆 Flutter SDK：${url}"
+    if git clone -q --depth 1 -b "${FLUTTER_VERSION}" "$url" "$FLUTTER_ROOT"; then
+      FLUTTER_CLONE_OK=1
+      break
+    fi
+    echo "克隆失败，清理后尝试下一个镜像..."
+    rm -rf "$FLUTTER_ROOT"
+  done
+  if [ "$FLUTTER_CLONE_OK" -ne 1 ]; then
+    echo "错误：Flutter SDK 克隆失败（GitHub 与 Gitee 镜像均不可用）" >&2
+    exit 1
+  fi
 fi
 export PATH="$FLUTTER_ROOT/bin:$PATH"
+# 国内 CI 使用 Flutter 镜像加速 pub 与引擎下载
+export PUB_HOSTED_URL="${PUB_HOSTED_URL:-https://pub.flutter-io.cn}"
+export FLUTTER_STORAGE_BASE_URL="${FLUTTER_STORAGE_BASE_URL:-https://storage.flutter-io.cn}"
 
 export ANDROID_HOME="${ANDROID_HOME:-$HOME/android-sdk}"
 export ANDROID_SDK_ROOT="$ANDROID_HOME"
