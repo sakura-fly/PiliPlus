@@ -61,14 +61,25 @@ jobs:
         shell: pwsh
 
       - name: Release
-        if: ${{ github.event.inputs.tag != '' }}
+        if: ${{ inputs.tag != '' }}
         uses: softprops/action-gh-release@v3
         with:
-          tag_name: ${{ github.event.inputs.tag }}
-          name: ${{ github.event.inputs.tag }}
+          tag_name: ${{ inputs.tag }}
+          name: ${{ inputs.tag }}
           files: |
             PiliPlus_windows_*.zip
             PiliPlus-Win-Setup/PiliPlus_windows_*.exe
+
+      - name: 上传到 Gitee Release
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+        shell: bash
+        run: |
+          bash lib/scripts/gitee_release_upload.sh \
+            --repo sakura-fly/PiliPlus \
+            --tag "${{ inputs.tag }}" \
+            --files 'PiliPlus_windows_*.zip' \
+            --files 'PiliPlus-Win-Setup/PiliPlus_windows_*.exe'
 
       - name: Upload windows file release
         uses: actions/upload-artifact@v7

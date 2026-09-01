@@ -1,0 +1,69 @@
+# =============================================================================
+# PiliPlus —— Gitee Go 流水线：打包 Android APK
+# 按 Gitee Go 官方文档 schema 编写（help.gitee.com/gitee-go）：
+#   流水线: version/name(标识)/displayName(名称)
+#   阶段:   name/displayName/strategy/trigger/executor
+#   任务:   step(插件标识)/name(任务标识)/displayName/插件参数
+#
+# 构建方案：Gitee Go 官方插件没有 Flutter/Android 专用插件，
+#   使用云端编译插件 build@gcc（Ubuntu 20.04 执行器）+ 自定义命令
+#   调用 lib/scripts/gitee_android_build.sh 完成整条构建链。
+#
+# 签名：全局参数 KEYGEN_SEED 取前 32 位 -> SHA-256 -> keytool 生成 key.jks
+#   （同一种子 = 同一签名，KEYGEN_SEED 发版后不要改动）
+#
+# 产物：build@gcc 暂存 apk/（7 天），publish@general_artifacts 上传制品库。
+# =============================================================================
+
+version: '1.0'
+name: piliplus-android-build
+displayName: PiliPlus Android 打包
+
+triggers:
+  push:
+    branches:
+      prefix:
+        - release
+        - g
+    tags:
+      prefix:
+        - v
+
+stages:
+  - name: build
+    displayName: 构建
+    strategy: naturally
+    trigger: auto
+    executor: []
+    steps:
+      - step: build@gcc
+        name: build-flutter-android
+        displayName: 构建 Flutter Android APK
+        gccVersion: 10.3
+        commands:
+          - |
+            set -e
+            # 云端编译插件不会自动检出代码，工作区默认为空：先克隆当前仓库
+            if [ ! -f pubspec.yaml ]; then
+              # 工作区形如 /root/workspace/{owner}/{repo}，取最后两级
+              OWNER_REPO=$(pwd | awk -F/ '{print $(NF-1)"/"$NF}')
+              BRANCH="${GITEE_BRANCH:-release}"
+              echo "检出代码: https://gitee.com/${OWNER_REPO}.git (分支 ${BRANCH})"
+              git clone --depth 1 -b "${BRANCH}" "https://gitee.com/${OWNER_REPO}.git" .
+            fi
+            pwd
+            bash lib/scripts/gitee_android_build.sh
+        artifacts:
+          - name: BUILD_ARTIFACT
+            path:
+              - ./apk
+      - step: publish@general_artifacts
+        name: upload-artifacts
+        displayName: 上传制品
+        dependsOn: build-flutter-android
+        dependArtifact: BUILD_ARTIFACT
+        artifactRepository: default
+        artifactName: piliplus-apk
+variables:
+  global:
+    - KEYGEN_SEED

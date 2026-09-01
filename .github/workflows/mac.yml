@@ -47,13 +47,23 @@ jobs:
         run: mv PiliPlus*.dmg PiliPlus_macos_${{ env.version }}.dmg
 
       - name: Release
-        if: ${{ github.event.inputs.tag != '' }}
+        if: ${{ inputs.tag != '' }}
         uses: softprops/action-gh-release@v3
         with:
-          tag_name: ${{ github.event.inputs.tag }}
-          name: ${{ github.event.inputs.tag }}
+          tag_name: ${{ inputs.tag }}
+          name: ${{ inputs.tag }}
           files: |
             PiliPlus_macos_*.dmg
+
+      - name: 上传到 Gitee Release
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+        shell: bash
+        run: |
+          bash lib/scripts/gitee_release_upload.sh \
+            --repo sakura-fly/PiliPlus \
+            --tag "${{ inputs.tag }}" \
+            --files 'PiliPlus_macos_*.dmg'
 
       - name: Upload macos release
         uses: actions/upload-artifact@v7

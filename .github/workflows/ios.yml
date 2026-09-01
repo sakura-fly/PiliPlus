@@ -43,13 +43,23 @@ jobs:
           zip -r9 PiliPlus_ios_${{env.version}}.ipa Payload/Runner.app
 
       - name: Release
-        if: ${{ github.event.inputs.tag != '' }}
+        if: ${{ inputs.tag != '' }}
         uses: softprops/action-gh-release@v3
         with:
-          tag_name: ${{ github.event.inputs.tag }}
-          name: ${{ github.event.inputs.tag }}
+          tag_name: ${{ inputs.tag }}
+          name: ${{ inputs.tag }}
           files: |
             PiliPlus_ios_*.ipa
+
+      - name: 上传到 Gitee Release
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+        shell: bash
+        run: |
+          bash lib/scripts/gitee_release_upload.sh \
+            --repo sakura-fly/PiliPlus \
+            --tag "${{ inputs.tag }}" \
+            --files 'PiliPlus_ios_*.ipa'
 
       - name: Upload ios release
         uses: actions/upload-artifact@v7

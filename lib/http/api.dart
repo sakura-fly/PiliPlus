@@ -409,9 +409,13 @@ abstract final class Api {
   // 黑名单
   static const String blackLst = '/x/relation/blacks';
 
-  // github 获取最新版
+  // gitee 获取最新版
   static const String latestApp =
-      'https://api.github.com/repos/sakura-fly/PiliPlus/releases';
+      'https://gitee.com/api/v5/repos/sakura-fly/PiliPlus/releases?per_page=1';
+
+  // gitee 获取指定 release 的附件列表（release id + '/attach_files'）
+  static const String giteeAttachFiles =
+      'https://gitee.com/api/v5/repos/sakura-fly/PiliPlus/releases/';
 
   // 多少人在看
   // https://api.bilibili.com/x/player/online/total?aid=913663681&cid=1203559746&bvid=BV1MM4y1s7NZ&ts=56427838
