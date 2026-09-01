@@ -140,29 +140,11 @@ if [ -f "$WRAPPER_PROP" ]; then
   echo "Gradle 发行版镜像: $(grep -h distributionUrl "$WRAPPER_PROP" || true)"
 fi
 
-# Gradle 依赖仓库追加阿里云镜像（init 脚本方式，不改项目文件；阿里云缺包时自动回落到官方源）。
-# 注意：不要在这里动 pluginManagement.repositories——Gradle 9 的 PREFER_SETTINGS 模式
-# 会报 "repository 'maven' was added by settings file"；插件仓库用 settings.gradle.kts
-# 里自带的 google()/mavenCentral()/gradlePluginPortal()。
-mkdir -p "$HOME/.gradle/init.d"
-cat > "$HOME/.gradle/init.d/mirror.gradle" <<'GRADLE_EOF'
-allprojects {
-    buildscript {
-        repositories {
-            maven { url 'https://maven.aliyun.com/repository/google' }
-            maven { url 'https://maven.aliyun.com/repository/central' }
-            maven { url 'https://maven.aliyun.com/repository/gradle-plugin' }
-            maven { url 'https://maven.aliyun.com/repository/public' }
-        }
-    }
-    repositories {
-        maven { url 'https://maven.aliyun.com/repository/google' }
-        maven { url 'https://maven.aliyun.com/repository/central' }
-        maven { url 'https://maven.aliyun.com/repository/public' }
-    }
-}
-GRADLE_EOF
-echo "已写入 Gradle 镜像 init 脚本"
+# 注意：不要用 init 脚本注入任何 Gradle 仓库——Gradle 9.5 的 PREFER_SETTINGS 模式
+# 会报 "repository 'maven' was added by settings file" 并中断构建。
+# 插件与依赖仓库直接用项目自带的 google()/mavenCentral()/gradlePluginPortal()
+# （dl.google.com 已确认可达：Android cmdline-tools 下载成功）。
+# 若后续依赖下载超时，再考虑把阿里云镜像直接写进 settings.gradle.kts / build.gradle.kts。
 
 flutter build apk --release --split-per-abi --dart-define-from-file=pili_release.json --pub
 
