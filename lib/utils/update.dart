@@ -1,7 +1,6 @@
 import 'dart:io' show Platform;
 
 import 'package:PiliPlus/build_config.dart';
-import 'package:PiliPlus/common/constants.dart';
 import 'package:PiliPlus/http/api.dart';
 import 'package:PiliPlus/http/browser_ua.dart';
 import 'package:PiliPlus/http/init.dart';
@@ -30,11 +29,21 @@ abstract final class Update {
       );
       if (res.data is Map || res.data.isEmpty) {
         if (!isAuto) {
-          SmartDialog.showToast('检查更新失败，GitHub接口未返回数据，请检查网络');
+          SmartDialog.showToast('检查更新失败，Gitee接口未返回数据，请检查网络');
         }
         return;
       }
       final data = res.data[0];
+      // gitee 的 release 不内嵌附件，需单独获取附件列表并合并到 assets
+      final attachRes = await Request().get(
+        '${Api.giteeAttachFiles}${data['id']}/attach_files',
+        queryParameters: {'per_page': 100},
+        options: Options(
+          headers: {'user-agent': BrowserUa.mob},
+          extra: {'account': const NoAccount()},
+        ),
+      );
+      data['assets'] = attachRes.data is List ? attachRes.data : [];
       final int latest =
           DateTime.parse(data['created_at']).millisecondsSinceEpoch ~/ 1000;
       if (BuildConfig.buildTime >= latest) {
@@ -66,7 +75,7 @@ abstract final class Update {
                       Text('${data['body']}'),
                       TextButton(
                         onPressed: () => PageUtils.launchURL(
-                          '${Constants.sourceCodeUrl}/commits/main',
+                          'https://gitee.com/sakura-fly/PiliPlus/commits',
                         ),
                         child: Text(
                           "点此查看完整更新(即commit)内容",
@@ -104,7 +113,7 @@ abstract final class Update {
                   downloadBtn('deb', ext: 'deb'),
                   downloadBtn('targz', ext: 'tar.gz'),
                 ] else
-                  downloadBtn('Github'),
+                  downloadBtn('Gitee'),
               ],
             );
           },
@@ -125,7 +134,7 @@ abstract final class Update {
             final String name = i['name'];
             if (name.contains(plat) &&
                 (ext == null || ext.isEmpty ? true : name.endsWith(ext))) {
-              PageUtils.launchURL('https://ghproxy.net/' + i['browser_download_url']);
+              PageUtils.launchURL(i['browser_download_url']);
               return;
             }
           }
@@ -143,7 +152,7 @@ abstract final class Update {
       }
     } catch (e) {
       if (kDebugMode) debugPrint('download error: $e');
-      PageUtils.launchURL('${Constants.sourceCodeUrl}/releases/latest');
+      PageUtils.launchURL('https://gitee.com/sakura-fly/PiliPlus/releases');
     }
   }
 }
