@@ -140,7 +140,10 @@ if [ -f "$WRAPPER_PROP" ]; then
   echo "Gradle 发行版镜像: $(grep -h distributionUrl "$WRAPPER_PROP" || true)"
 fi
 
-# Gradle 依赖仓库追加阿里云镜像（init 脚本方式，不改项目文件；阿里云缺包时自动回落到官方源）
+# Gradle 依赖仓库追加阿里云镜像（init 脚本方式，不改项目文件；阿里云缺包时自动回落到官方源）。
+# 注意：不要在这里动 pluginManagement.repositories——Gradle 9 的 PREFER_SETTINGS 模式
+# 会报 "repository 'maven' was added by settings file"；插件仓库用 settings.gradle.kts
+# 里自带的 google()/mavenCentral()/gradlePluginPortal()。
 mkdir -p "$HOME/.gradle/init.d"
 cat > "$HOME/.gradle/init.d/mirror.gradle" <<'GRADLE_EOF'
 allprojects {
@@ -156,13 +159,6 @@ allprojects {
         maven { url 'https://maven.aliyun.com/repository/google' }
         maven { url 'https://maven.aliyun.com/repository/central' }
         maven { url 'https://maven.aliyun.com/repository/public' }
-    }
-}
-settingsEvaluated { settings ->
-    settings.pluginManagement.repositories {
-        maven { url 'https://maven.aliyun.com/repository/google' }
-        maven { url 'https://maven.aliyun.com/repository/gradle-plugin' }
-        maven { url 'https://maven.aliyun.com/repository/central' }
     }
 }
 GRADLE_EOF
