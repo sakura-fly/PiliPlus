@@ -22,13 +22,15 @@ set -euo pipefail
 API="https://gitee.com/api/v5"
 REPO=""
 TAG=""
+COMMITISH=""
 FILES=()
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --repo)   REPO="${2:-}"; shift 2 ;;
-    --tag)    TAG="${2:-}"; shift 2 ;;
-    --files)  FILES+=("${2:-}"); shift 2 ;;
+    --repo)      REPO="${2:-}"; shift 2 ;;
+    --tag)       TAG="${2:-}"; shift 2 ;;
+    --commitish) COMMITISH="${2:-}"; shift 2 ;;
+    --files)     FILES+=("${2:-}"); shift 2 ;;
     *) echo "错误：未知参数 $1" >&2; exit 2 ;;
   esac
 done
@@ -60,17 +62,27 @@ fi
 if [[ -z "$RELEASE_ID" ]]; then
   echo "==> Release $TAG 不存在，尝试创建..."
   BODY="{\"access_token\":\"$GITEE_TOKEN\",\"tag_name\":\"$TAG\",\"name\":\"$TAG\",\"body\":\"PiliPlus $TAG\""
-  if [[ -n "${GITHUB_SHA:-}" ]]; then
-    BODY="$BODY,\"target_commitish\":\"$GITHUB_SHA\""
+  # target_commitish 只接受 Gitee 仓库中真实存在的分支名或 commit SHA；
+  # 默认不传，让 Gitee 使用其默认分支创建 tag（GitHub 的 SHA 在 Gitee 仓库中不存在，会返回 400）
+  if [[ -n "$COMMITISH" ]]; then
+    BODY="$BODY,\"target_commitish\":\"$COMMITISH\""
   fi
   BODY="$BODY,\"prerelease\":false}"
-  CREATE_JSON="$(curl -fsSL -X POST "$API/repos/$REPO/releases" \
+  CREATE_TMP="$(mktemp)"
+  CREATE_CODE="$(curl -sS -o "$CREATE_TMP" -w '%{http_code}' -X POST "$API/repos/$REPO/releases" \
     -H 'Content-Type: application/json;charset=UTF-8' \
-    --data "$BODY")"
+    --data "$BODY" || true)"
+  CREATE_JSON="$(cat "$CREATE_TMP" 2>/dev/null || true)"
+  rm -f "$CREATE_TMP"
+  if [[ "$CREATE_CODE" != 2* ]]; then
+    echo "错误：创建 Gitee Release 失败（HTTP $CREATE_CODE），响应：" >&2
+    echo "$CREATE_JSON" >&2
+    exit 1
+  fi
   RELEASE_ID="$(printf '%s' "$CREATE_JSON" \
     | grep -o '"id"[[:space:]]*:[[:space:]]*[0-9]*' | head -1 | grep -o '[0-9]*' || true)"
   if [[ -z "$RELEASE_ID" ]]; then
-    echo "错误：创建 Gitee Release 失败，响应：" >&2
+    echo "错误：创建 Gitee Release 失败（HTTP $CREATE_CODE），响应：" >&2
     echo "$CREATE_JSON" >&2
     exit 1
   fi
