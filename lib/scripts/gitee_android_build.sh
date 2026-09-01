@@ -140,11 +140,25 @@ if [ -f "$WRAPPER_PROP" ]; then
   echo "Gradle 发行版镜像: $(grep -h distributionUrl "$WRAPPER_PROP" || true)"
 fi
 
-# 注意：不要用 init 脚本注入任何 Gradle 仓库——Gradle 9.5 的 PREFER_SETTINGS 模式
-# 会报 "repository 'maven' was added by settings file" 并中断构建。
-# 插件与依赖仓库直接用项目自带的 google()/mavenCentral()/gradlePluginPortal()
-# （dl.google.com 已确认可达：Android cmdline-tools 下载成功）。
-# 若后续依赖下载超时，再考虑把阿里云镜像直接写进 settings.gradle.kts / build.gradle.kts。
+# 容器只有 2Gi 内存：收敛 Gradle JVM 堆（默认 -Xmx4G 会导致 OOM/长时间卡死）
+GRADLE_PROPS=android/gradle.properties
+if [ -f "$GRADLE_PROPS" ]; then
+  sed -i 's|-Xmx4G|-Xmx1536m|; s|-XX:MaxMetaspaceSize=2G|-XX:MaxMetaspaceSize=512m|' "$GRADLE_PROPS"
+  echo "Gradle JVM 内存: $(grep -h org.gradle.jvmargs "$GRADLE_PROPS" || true)"
+fi
+
+# 阿里云 Maven 镜像直接写入项目文件（PREFER_SETTINGS 模式下 init 脚本注入不可行，
+# 只能改项目文件本身；google/mavenCentral 保留作回落）
+SETTINGS_KTS=android/settings.gradle.kts
+BUILD_KTS=android/build.gradle.kts
+if [ -f "$SETTINGS_KTS" ] && ! grep -q 'maven.aliyun.com' "$SETTINGS_KTS"; then
+  sed -i 's|        gradlePluginPortal()|        maven { url = uri("https://maven.aliyun.com/repository/gradle-plugin") }\n        maven { url = uri("https://maven.aliyun.com/repository/google") }\n        maven { url = uri("https://maven.aliyun.com/repository/central") }\n        gradlePluginPortal()|' "$SETTINGS_KTS"
+  echo "已向 settings.gradle.kts 注入阿里云插件仓库"
+fi
+if [ -f "$BUILD_KTS" ] && ! grep -q 'maven.aliyun.com' "$BUILD_KTS"; then
+  sed -i '0,/        mavenCentral()/s|        mavenCentral()|        maven { url = uri("https://maven.aliyun.com/repository/google") }\n        maven { url = uri("https://maven.aliyun.com/repository/central") }\n        maven { url = uri("https://maven.aliyun.com/repository/public") }\n        mavenCentral()|' "$BUILD_KTS"
+  echo "已向 build.gradle.kts 注入阿里云依赖仓库"
+fi
 
 flutter build apk --release --split-per-abi --dart-define-from-file=pili_release.json --pub
 
