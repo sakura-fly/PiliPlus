@@ -61,13 +61,21 @@ fi
 
 if [[ -z "$RELEASE_ID" ]]; then
   echo "==> Release $TAG 不存在，尝试创建..."
-  BODY="{\"access_token\":\"$GITEE_TOKEN\",\"tag_name\":\"$TAG\",\"name\":\"$TAG\",\"body\":\"PiliPlus $TAG\""
-  # target_commitish 只接受 Gitee 仓库中真实存在的分支名或 commit SHA；
-  # 默认不传，让 Gitee 使用其默认分支创建 tag（GitHub 的 SHA 在 Gitee 仓库中不存在，会返回 400）
-  if [[ -n "$COMMITISH" ]]; then
-    BODY="$BODY,\"target_commitish\":\"$COMMITISH\""
+  # Gitee 要求 target_commitish 必填，且必须是 Gitee 仓库中真实存在的分支名或 commit SHA；
+  # 未显式传入时自动读取 Gitee 仓库默认分支（GitHub 的 SHA 在 Gitee 仓库中不存在，会返回 400）
+  if [[ -z "$COMMITISH" ]]; then
+    REPO_JSON="$(curl -fsSL -G "$API/repos/$REPO" \
+      --data-urlencode "access_token=$GITEE_TOKEN" 2>/dev/null || true)"
+    COMMITISH="$(printf '%s' "$REPO_JSON" \
+      | grep -o '"default_branch"[[:space:]]*:[[:space:]]*"[^"]*"' \
+      | sed -E 's/.*"default_branch"[[:space:]]*:[[:space:]]*"([^"]*)"/\1/' | head -1 || true)"
+    echo "==> 自动获取 Gitee 默认分支: ${COMMITISH:-<未获取到>}"
   fi
-  BODY="$BODY,\"prerelease\":false}"
+  if [[ -z "$COMMITISH" ]]; then
+    echo "错误：无法确定 target_commitish（请用 --commitish 显式指定 Gitee 仓库的分支名）" >&2
+    exit 1
+  fi
+  BODY="{\"access_token\":\"$GITEE_TOKEN\",\"tag_name\":\"$TAG\",\"name\":\"$TAG\",\"body\":\"PiliPlus $TAG\",\"target_commitish\":\"$COMMITISH\",\"prerelease\":false}"
   CREATE_TMP="$(mktemp)"
   CREATE_CODE="$(curl -sS -o "$CREATE_TMP" -w '%{http_code}' -X POST "$API/repos/$REPO/releases" \
     -H 'Content-Type: application/json;charset=UTF-8' \
