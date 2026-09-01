@@ -43,8 +43,9 @@ command -v pwsh
 echo "==> 3/7 准备 Flutter 与 Android SDK"
 # 增大 Git 缓冲区，降低大仓库克隆时 RPC failed / early EOF 的概率
 git config --global http.postBuffer 524288000
-git config --global http.lowSpeedLimit 1000
-git config --global http.lowSpeedTime 60
+# 放宽限速阈值，避免大仓库镜像克隆被误判为"过慢"而中止
+git config --global http.lowSpeedLimit 100
+git config --global http.lowSpeedTime 600
 
 export FLUTTER_ROOT="$HOME/flutter"
 if [ ! -d "$FLUTTER_ROOT" ]; then
@@ -73,6 +74,9 @@ export PATH="$FLUTTER_ROOT/bin:$PATH"
 # 国内 CI 使用 Flutter 镜像加速 pub 与引擎下载
 export PUB_HOSTED_URL="${PUB_HOSTED_URL:-https://pub.flutter-io.cn}"
 export FLUTTER_STORAGE_BASE_URL="${FLUTTER_STORAGE_BASE_URL:-https://storage.flutter-io.cn}"
+
+# Gitee 执行器访问 GitHub 不稳定：pub get 的 git 依赖统一改走国内代理
+git config --global url."https://ghfast.top/https://github.com/".insteadOf "https://github.com/"
 
 export ANDROID_HOME="${ANDROID_HOME:-$HOME/android-sdk}"
 export ANDROID_SDK_ROOT="$ANDROID_HOME"
