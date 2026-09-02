@@ -52,6 +52,7 @@ jobs:
             PiliPlus_ios_*.ipa
 
       - name: 上传到 Gitee Release
+        continue-on-error: true
         env:
           GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
         shell: bash

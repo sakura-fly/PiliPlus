@@ -112,9 +112,44 @@ exists() {
   return 1
 }
 
-# ---- 3. 上传文件 ----
+# ---- 3. 上传文件（带超时与自动重试） ----
 UPLOADED=0
 SKIPPED=0
+
+# 上传单个附件；失败自动重试（Gitee 上传不稳定/限流，重试+退避提高成功率）
+upload_file() {
+  local file="$1" attempt delay=5 code body tmp encoded_name
+  local name
+  name="$(basename "$file")"
+  # Gitee 会把 multipart filename 中的 + 按 URL 空格解码，转义为 %2B 以保留加号
+  encoded_name="${name//+/%2B}"
+  for ((attempt = 1; attempt <= 3; attempt++)); do
+    tmp="$(mktemp)"
+    code="$(curl -sS -o "$tmp" -w '%{http_code}' --connect-timeout 30 --max-time 900 \
+      -X POST "$API/repos/$REPO/releases/$RELEASE_ID/attach_files" \
+      -H 'Expect:' \
+      -F "access_token=$GITEE_TOKEN" \
+      -F "file=@$file;filename=$encoded_name" || true)"
+    body="$(cat "$tmp" 2>/dev/null || true)"
+    rm -f "$tmp"
+    if [[ "$code" == 2* ]]; then
+      echo "==> 上传成功: $name"
+      return 0
+    fi
+    echo "警告：上传 $name 失败（HTTP $code，第 $attempt/3 次）" >&2
+    if [[ -n "$body" ]]; then
+      echo "Gitee 响应: $body" >&2
+    fi
+    if [[ $attempt -lt 3 ]]; then
+      sleep "$delay"
+      delay=$((delay * 2))
+    fi
+  done
+  echo "错误：上传 $name 最终失败" >&2
+  return 1
+}
+
+FAILED=0
 for GLOB in "${FILES[@]}"; do
   for FILE in $GLOB; do
     [[ -f "$FILE" ]] || continue
@@ -124,14 +159,16 @@ for GLOB in "${FILES[@]}"; do
       SKIPPED=$((SKIPPED + 1))
       continue
     fi
-    echo "==> 上传: $NAME"
-    curl -fsSL -X POST "$API/repos/$REPO/releases/$RELEASE_ID/attach_files" \
-      -H 'Expect:' \
-      -F "access_token=$GITEE_TOKEN" \
-      -F "file=@$FILE"
-    echo ""
-    UPLOADED=$((UPLOADED + 1))
+    if ! upload_file "$FILE"; then
+      FAILED=1
+    else
+      UPLOADED=$((UPLOADED + 1))
+    fi
   done
 done
 
 echo "==> 完成：上传 $UPLOADED 个文件，跳过 $SKIPPED 个已存在文件。"
+if [[ "$FAILED" -eq 1 ]]; then
+  echo "错误：部分文件上传失败" >&2
+  exit 1
+fi
