@@ -44,11 +44,25 @@ abstract final class Update {
         ),
       );
       data['assets'] = attachRes.data is List ? attachRes.data : [];
-      final int latest =
-          DateTime.parse(data['created_at']).millisecondsSinceEpoch ~/ 1000;
-      if (BuildConfig.buildTime >= latest) {
+      // 用版本号(versionCode)判断是否有更新：Release 创建时间总是晚于构建时间，
+      // 按 created_at 时间戳比较会导致"已是最新版仍提示更新"的误报
+      final String tagName = '${data['tag_name']}';
+      final versionCodeMatch = RegExp(r'\+(\d+)\s*$').firstMatch(tagName);
+      final int? latestCode =
+          versionCodeMatch == null ? null : int.tryParse(versionCodeMatch.group(1)!);
+      final bool hasUpdate;
+      if (latestCode != null) {
+        hasUpdate = latestCode > BuildConfig.versionCode;
+      } else {
+        // tag 名不含版本号时回退到时间比较
+        final int latest =
+            DateTime.parse(data['created_at']).millisecondsSinceEpoch ~/ 1000;
+        hasUpdate = BuildConfig.buildTime < latest;
+      }
+      if (!hasUpdate) {
         if (!isAuto) {
-          SmartDialog.showToast('已是最新版本: $latest, 当前版本: ${BuildConfig.buildTime}');
+          SmartDialog.showToast(
+              '已是最新版本: $tagName, 当前版本: ${BuildConfig.versionName}+${BuildConfig.versionCode}');
         }
       } else {
         SmartDialog.show(
