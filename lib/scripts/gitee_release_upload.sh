@@ -23,6 +23,7 @@ API="https://gitee.com/api/v5"
 REPO=""
 TAG=""
 COMMITISH=""
+KEEP=""
 FILES=()
 
 while [[ $# -gt 0 ]]; do
@@ -31,6 +32,7 @@ while [[ $# -gt 0 ]]; do
     --tag)       TAG="${2:-}"; shift 2 ;;
     --commitish) COMMITISH="${2:-}"; shift 2 ;;
     --files)     FILES+=("${2:-}"); shift 2 ;;
+    --keep)      KEEP="${2:-}"; shift 2 ;;
     *) echo "错误：未知参数 $1" >&2; exit 2 ;;
   esac
 done
@@ -172,3 +174,32 @@ if [[ "$FAILED" -eq 1 ]]; then
   echo "错误：部分文件上传失败" >&2
   exit 1
 fi
+
+# ---- 4. 清理旧 Release（仅保留最近 KEEP 个，默认不清理） ----
+cleanup_old_releases() {
+  local keep="$1" list ids id idx=0
+  if ! [[ "$keep" =~ ^[0-9]+$ ]] || [[ "$keep" -eq 0 ]]; then
+    return 0
+  fi
+  echo "==> 清理旧 Release：仅保留最近 $keep 个"
+  list="$(curl -fsSL -G "$API/repos/$REPO/releases" \
+    --data-urlencode "access_token=$GITEE_TOKEN" \
+    --data-urlencode "per_page=100" 2>/dev/null || true)"
+  # 只取 release 外层 id（按创建时间倒序），author.id 等内嵌 id 不匹配
+  ids="$(printf '%s' "$list" \
+    | grep -oE '\{"id":[0-9]+,"tag_name"' \
+    | grep -oE '[0-9]+')"
+  for id in $ids; do
+    idx=$((idx + 1))
+    if [[ $idx -le "$keep" ]]; then
+      continue
+    fi
+    echo "==> 删除旧 Release #$id（保留最近 ${keep} 个）"
+    curl -fsSL -X DELETE "$API/repos/$REPO/releases/$id" \
+      --data-urlencode "access_token=$GITEE_TOKEN" >/dev/null 2>&1 \
+      || echo "警告：删除 Release #$id 失败" >&2
+  done
+}
+
+cleanup_old_releases "$KEEP"
+echo "==> 完成"

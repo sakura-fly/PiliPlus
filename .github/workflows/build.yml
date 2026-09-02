@@ -217,10 +217,12 @@ jobs:
           GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
         shell: bash
         run: |
+          # Gitee 仅保留 Android armeabi-v7a 安装包，且只保留最近 5 个 Release
           bash lib/scripts/gitee_release_upload.sh \
             --repo sakura-fly/PiliPlus \
             --tag "${{ github.event.inputs.tag || needs.auto_tag.outputs.auto_tag }}" \
-            --files 'PiliPlus_android_*.apk'
+            --files 'PiliPlus_android_*armeabi-v7a.apk' \
+            --keep 5
 
       - name: 上传
         uses: actions/upload-artifact@v7
@@ -247,7 +249,6 @@ jobs:
     needs: auto_tag
     if: ${{ (github.event_name == 'push' && github.repository == 'sakura-fly/PiliPlus') || github.event.inputs.build_ios == 'true' }}
     uses: ./.github/workflows/ios.yml
-    secrets: inherit
     permissions: write-all
     with:
       tag: ${{ github.event.inputs.tag || needs.auto_tag.outputs.auto_tag }}
@@ -256,7 +257,6 @@ jobs:
     needs: auto_tag
     if: ${{ (github.event_name == 'push' && github.repository == 'sakura-fly/PiliPlus') || github.event.inputs.build_mac == 'true' }}
     uses: ./.github/workflows/mac.yml
-    secrets: inherit
     permissions: write-all
     with:
       tag: ${{ github.event.inputs.tag || needs.auto_tag.outputs.auto_tag }}
@@ -265,7 +265,6 @@ jobs:
     needs: auto_tag
     if: ${{ (github.event_name == 'push' && github.repository == 'sakura-fly/PiliPlus') || github.event.inputs.build_win_x64 == 'true' }}
     uses: ./.github/workflows/win_x64.yml
-    secrets: inherit
     permissions: write-all
     with:
       tag: ${{ github.event.inputs.tag || needs.auto_tag.outputs.auto_tag }}
@@ -274,7 +273,6 @@ jobs:
     needs: auto_tag
     if: ${{ (github.event_name == 'push' && github.repository == 'sakura-fly/PiliPlus') || github.event.inputs.build_linux_x64 == 'true' }}
     uses: ./.github/workflows/linux_x64.yml
-    secrets: inherit
     permissions: write-all
     with:
       tag: ${{ github.event.inputs.tag || needs.auto_tag.outputs.auto_tag }}

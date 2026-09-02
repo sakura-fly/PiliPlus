@@ -51,16 +51,6 @@ jobs:
           files: |
             PiliPlus_ios_*.ipa
 
-      - name: 上传到 Gitee Release
-        continue-on-error: true
-        env:
-          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
-        shell: bash
-        run: |
-          bash lib/scripts/gitee_release_upload.sh \
-            --repo sakura-fly/PiliPlus \
-            --tag "${{ inputs.tag }}" \
-            --files 'PiliPlus_ios_*.ipa'
 
       - name: Upload ios release
         uses: actions/upload-artifact@v7

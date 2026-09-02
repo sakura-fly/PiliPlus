@@ -225,19 +225,6 @@ jobs:
             PiliPlus_linux_*.rpm
             PiliPlus_linux_*.AppImage
 
-      - name: 上传到 Gitee Release
-        continue-on-error: true
-        env:
-          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
-        shell: bash
-        run: |
-          bash lib/scripts/gitee_release_upload.sh \
-            --repo sakura-fly/PiliPlus \
-            --tag "${{ inputs.tag }}" \
-            --files 'PiliPlus_linux_*.tar.gz' \
-            --files 'PiliPlus_linux_*.deb' \
-            --files 'PiliPlus_linux_*.rpm' \
-            --files 'PiliPlus_linux_*.AppImage'
 
       - name: Upload linux targz package
         uses: actions/upload-artifact@v7
