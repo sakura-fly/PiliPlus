@@ -1,15 +1,17 @@
-import 'dart:io' show Platform;
+import 'dart:io' show Directory, File, Platform, Process;
 
 import 'package:PiliPlus/build_config.dart';
 import 'package:PiliPlus/http/api.dart';
 import 'package:PiliPlus/http/browser_ua.dart';
 import 'package:PiliPlus/http/init.dart';
+import 'package:PiliPlus/services/download/download_manager.dart';
 import 'package:PiliPlus/utils/accounts/account.dart';
 import 'package:PiliPlus/utils/page_utils.dart';
 import 'package:PiliPlus/utils/storage.dart';
 import 'package:PiliPlus/utils/storage_key.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:dio/dio.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter_smart_dialog/flutter_smart_dialog.dart';
 import 'package:material_ui/material_ui.dart';
@@ -142,31 +144,122 @@ abstract final class Update {
   static Future<void> onDownload(Map data, {String? ext}) async {
     SmartDialog.dismiss();
     try {
-      void download(String plat) {
-        if (data['assets'].isNotEmpty) {
-          for (Map<String, dynamic> i in data['assets']) {
-            final String name = i['name'];
-            if (name.contains(plat) &&
-                (ext == null || ext.isEmpty ? true : name.endsWith(ext))) {
-              PageUtils.launchURL(i['browser_download_url']);
-              return;
-            }
-          }
-          throw UnsupportedError('platform not found: $plat');
-        }
+      final String plat = Platform.isAndroid
+          ? (await DeviceInfoPlugin().androidInfo).supportedAbis.first
+          : Platform.operatingSystem;
+      final asset = findAsset(data, plat: plat, ext: ext);
+      if (asset == null) {
+        throw UnsupportedError('platform not found: $plat');
       }
-
-      if (Platform.isAndroid) {
-        // 获取设备信息
-        AndroidDeviceInfo androidInfo = await DeviceInfoPlugin().androidInfo;
-        // [arm64-v8a]
-        download(androidInfo.supportedAbis.first);
-      } else {
-        download(Platform.operatingSystem);
-      }
+      final String url = asset['browser_download_url'];
+      final String fileName = asset['name'];
+      // 选择下载方式：跳转浏览器 / App 内直接下载
+      SmartDialog.show(
+        animationType: SmartAnimationType.centerFade_otherSlide,
+        builder: (context) {
+          final colorScheme = ColorScheme.of(context);
+          return AlertDialog(
+            title: const Text('下载安装包'),
+            content: Text('$fileName\n\n请选择下载方式：'),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  SmartDialog.dismiss();
+                  PageUtils.launchURL(url);
+                },
+                child: const Text('跳转浏览器'),
+              ),
+              TextButton(
+                onPressed: () {
+                  SmartDialog.dismiss();
+                  downloadInApp(url, fileName);
+                },
+                child: Text(
+                  'App 内直接下载',
+                  style: TextStyle(color: colorScheme.primary),
+                ),
+              ),
+              TextButton(
+                onPressed: SmartDialog.dismiss,
+                child: Text('取消', style: TextStyle(color: colorScheme.outline)),
+              ),
+            ],
+          );
+        },
+      );
     } catch (e) {
       if (kDebugMode) debugPrint('download error: $e');
       PageUtils.launchURL('https://gitee.com/sakura-fly/PiliPlus/releases');
+    }
+  }
+
+  /// 在 assets 中查找匹配当前平台/格式的安装包
+  static Map<String, dynamic>? findAsset(
+    Map data, {
+    required String plat,
+    String? ext,
+  }) {
+    final assets = data['assets'];
+    if (assets is! List) return null;
+    for (final i in assets) {
+      if (i is! Map) continue;
+      final String name = '${i['name']}';
+      if (name.contains(plat) &&
+          (ext == null || ext.isEmpty ? true : name.endsWith(ext))) {
+        return i.cast<String, dynamic>();
+      }
+    }
+    return null;
+  }
+
+  /// App 内直接下载安装包
+  static void downloadInApp(String url, String fileName) {
+    Future<void> run() async {
+      try {
+        // 优先系统下载目录（桌面/Android 公共下载），不可用时回退应用文档目录
+        final Directory dir = await getDownloadsDirectory() ??
+            await getApplicationDocumentsDirectory();
+        final String savePath = '${dir.path}${Platform.pathSeparator}$fileName';
+        final file = File(savePath);
+        if (file.existsSync()) {
+          file.deleteSync(); // 避免续传残留导致安装包损坏
+        }
+        SmartDialog.showToast('开始下载: $fileName');
+        DownloadManager(
+          url: url,
+          path: savePath,
+          onReceiveProgress: (received, total) {},
+          onDone: ([Object? error]) {
+            if (error != null) {
+              SmartDialog.showToast('下载失败: $error');
+              return;
+            }
+            SmartDialog.showToast('下载完成: $savePath');
+            if (!Platform.isAndroid && !Platform.isIOS) {
+              openInFolder(savePath);
+            }
+          },
+        );
+      } catch (e) {
+        SmartDialog.showToast('下载失败: $e');
+      }
+    }
+
+    run();
+  }
+
+  /// 在文件管理器中显示下载好的文件（桌面端）
+  static Future<void> openInFolder(String filePath) async {
+    try {
+      if (Platform.isWindows) {
+        await Process.run('explorer', ['/select,', filePath]);
+      } else if (Platform.isMacOS) {
+        await Process.run('open', ['-R', filePath]);
+      } else if (Platform.isLinux) {
+        await Process.run('xdg-open', [File(filePath).parent.path]);
+      }
+    } catch (e) {
+      if (kDebugMode) debugPrint('open folder error: $e');
     }
   }
 }
