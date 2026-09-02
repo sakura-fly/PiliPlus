@@ -83,14 +83,14 @@ if [[ -z "$RELEASE_ID" ]]; then
   CREATE_JSON="$(cat "$CREATE_TMP" 2>/dev/null || true)"
   rm -f "$CREATE_TMP"
   if [[ "$CREATE_CODE" != 2* ]]; then
-    echo "错误：创建 Gitee Release 失败（HTTP $CREATE_CODE），响应：" >&2
+    echo "错误：创建 Gitee Release 失败（HTTP ${CREATE_CODE}），响应：" >&2
     echo "$CREATE_JSON" >&2
     exit 1
   fi
   RELEASE_ID="$(printf '%s' "$CREATE_JSON" \
     | grep -o '"id"[[:space:]]*:[[:space:]]*[0-9]*' | head -1 | grep -o '[0-9]*' || true)"
   if [[ -z "$RELEASE_ID" ]]; then
-    echo "错误：创建 Gitee Release 失败（HTTP $CREATE_CODE），响应：" >&2
+    echo "错误：创建 Gitee Release 失败（HTTP ${CREATE_CODE}），响应：" >&2
     echo "$CREATE_JSON" >&2
     exit 1
   fi
@@ -136,7 +136,7 @@ upload_file() {
       echo "==> 上传成功: $name"
       return 0
     fi
-    echo "警告：上传 $name 失败（HTTP $code，第 $attempt/3 次）" >&2
+    echo "警告：上传 $name 失败（HTTP ${code}，第 ${attempt}/3 次）" >&2
     if [[ -n "$body" ]]; then
       echo "Gitee 响应: $body" >&2
     fi
