@@ -11,10 +11,9 @@ try {
 
     $updatedContent = foreach ($line in (Get-Content -Path 'pubspec.yaml' -Encoding UTF8)) {
         if ($line -match '^\s*version:\s*([\d\.]+)') {
+            # 各平台版本号统一为 versionName+versionCode（不带 commit hash），
+            # 保证 APK 文件名与 Release tag（v2.1.2+5380）一致
             $versionName = $matches[1]
-            if ($Arg -eq 'android') {
-                $versionName += '-' + $commitHash.Substring(0, 9)
-            }
             "version: $versionName+$versionCode"
         }
         else {
