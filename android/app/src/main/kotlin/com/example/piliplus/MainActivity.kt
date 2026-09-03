@@ -2,6 +2,8 @@ package com.example.piliplus
 
 import android.content.Intent
 import android.content.res.Configuration
+import android.net.Uri
+import android.provider.Settings
 import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager.LayoutParams
@@ -34,6 +36,22 @@ class MainActivity : AudioServiceActivity() {
                             "$packageName.fileprovider",
                             file
                         )
+                        // Android 8+ 需要"允许安装未知应用"权限，否则直接打开安装器会被拒绝
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+                            !packageManager.canRequestPackageInstalls()
+                        ) {
+                            val settingsIntent = Intent(
+                                Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                                Uri.parse("package:$packageName")
+                            ).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
+                            startActivity(settingsIntent)
+                            result.error(
+                                "install_unknown_sources_required",
+                                "need to allow install unknown apps",
+                                null
+                            )
+                            return@setMethodCallHandler
+                        }
                         val intent = Intent(Intent.ACTION_VIEW).apply {
                             setDataAndType(uri, "application/vnd.android.package-archive")
                             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)

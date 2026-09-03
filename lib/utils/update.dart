@@ -13,7 +13,7 @@ import 'package:device_info_plus/device_info_plus.dart';
 import 'package:dio/dio.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
-import 'package:flutter/services.dart' show MethodChannel;
+import 'package:flutter/services.dart' show MethodChannel, PlatformException;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_smart_dialog/flutter_smart_dialog.dart';
 import 'package:material_ui/material_ui.dart';
@@ -477,6 +477,14 @@ abstract final class Update {
         {'path': path},
       );
       return ok ?? false;
+    } on PlatformException catch (e) {
+      if (e.code == 'install_unknown_sources_required') {
+        // 已自动跳转系统"安装未知应用"设置页，提示用户开启后回来重试
+        SmartDialog.showToast('请在系统设置中允许"安装未知应用"后，再次点击安装');
+        return true; // 已引导，不再走兜底提示
+      }
+      if (kDebugMode) debugPrint('install apk error: $e');
+      return false;
     } catch (e) {
       if (kDebugMode) debugPrint('install apk error: $e');
       return false;
