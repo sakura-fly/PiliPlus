@@ -35,7 +35,17 @@ abstract final class Update {
         }
         return;
       }
-      final data = res.data[0];
+      // Gitee releases 接口按创建时间升序返回（旧版本在前），取最新的一条
+      final List releases = res.data as List;
+      Map<String, dynamic> data =
+          (releases.first as Map).cast<String, dynamic>();
+      for (final release in releases) {
+        final current = release as Map;
+        if (DateTime.parse('${current['created_at']}')
+            .isAfter(DateTime.parse('${data['created_at']}'))) {
+          data = current.cast<String, dynamic>();
+        }
+      }
       // gitee 的 release 不内嵌附件，需单独获取附件列表并合并到 assets
       final attachRes = await Request().get(
         '${Api.giteeAttachFiles}${data['id']}/attach_files',

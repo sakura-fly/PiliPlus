@@ -114,40 +114,66 @@ exists() {
   return 1
 }
 
-# ---- 3. 上传文件（带超时与自动重试） ----
+# ---- 3. 上传文件（带超时、自动重试与失败原因输出） ----
 UPLOADED=0
 SKIPPED=0
 
-# 上传单个附件；失败自动重试（Gitee 上传不稳定/限流，重试+退避提高成功率）
+# 上传单个附件；单次最长 300s，最多 3 次，失败时输出 curl 详细原因与传输统计
 upload_file() {
-  local file="$1" attempt delay=5 code body tmp encoded_name
-  local name
+  local file="$1" attempt delay=10 code body tmp err out stats
+  local name name_form
   name="$(basename "$file")"
-  # Gitee 会把 multipart filename 中的 + 按 URL 空格解码，转义为 %2B 以保留加号
-  encoded_name="${name//+/%2B}"
+  # Gitee 会把 multipart filename 中的 + 按 URL 空格解码为空格；
+  # 优先用 %2B 转义以保留加号，若 Gitee 无响应则第 2 次尝试改用原名（排除转义干扰）
+  local encoded_name="${name//+/%2B}"
   for ((attempt = 1; attempt <= 3; attempt++)); do
     tmp="$(mktemp)"
-    code="$(curl -sS -o "$tmp" -w '%{http_code}' --connect-timeout 30 --max-time 900 \
+    err="$(mktemp)"
+    if [[ $attempt -eq 2 ]]; then
+      name_form="$name"
+    else
+      name_form="$encoded_name"
+    fi
+    echo "==> 上传 ${name}（第 ${attempt}/3 次，filename=${name_form}）"
+    # stdout 第一行 HTTP 状态码，第二行统计：已上传字节 总耗时(秒)
+    out="$(curl -sS -o "$tmp" -w '%{http_code}\n%{size_upload} %{time_total}' \
+      --connect-timeout 30 --max-time 300 \
       -X POST "$API/repos/$REPO/releases/$RELEASE_ID/attach_files" \
       -H 'Expect:' \
       -F "access_token=$GITEE_TOKEN" \
-      -F "file=@$file;filename=$encoded_name" || true)"
+      -F "file=@$file;filename=$name_form" 2>"$err" || true)"
+    code="$(printf '%s' "$out" | sed -n '1p')"
+    stats="$(printf '%s' "$out" | sed -n '2p')"
     body="$(cat "$tmp" 2>/dev/null || true)"
     rm -f "$tmp"
     if [[ "$code" == 2* ]]; then
       echo "==> 上传成功: $name"
+      rm -f "$err"
       return 0
     fi
-    echo "警告：上传 $name 失败（HTTP ${code}，第 ${attempt}/3 次）" >&2
-    if [[ -n "$body" ]]; then
-      echo "Gitee 响应: $body" >&2
+    # ---- 失败：输出可读的原因 ----
+    echo "警告：上传 $name 失败（HTTP ${code:-无响应}，第 ${attempt}/3 次）" >&2
+    if [[ -s "$err" ]]; then
+      echo "  原因: $(head -1 "$err" | sed 's/^curl: //')" >&2
+      if [[ $(wc -l < "$err") -gt 1 ]]; then
+        tail -n +2 "$err" | sed 's/^/  /' >&2
+      fi
     fi
+    if [[ -n "$stats" ]]; then
+      echo "  传输统计: 已上传 $(echo "$stats" | cut -d' ' -f1) 字节，用时 $(echo "$stats" | cut -d' ' -f2) 秒" >&2
+    fi
+    if [[ -n "$body" ]]; then
+      echo "  Gitee 响应: $body" >&2
+    fi
+    rm -f "$err"
     if [[ $attempt -lt 3 ]]; then
+      echo "  等待 ${delay}s 后重试..." >&2
       sleep "$delay"
       delay=$((delay * 2))
     fi
   done
-  echo "错误：上传 $name 最终失败" >&2
+  echo "错误：上传 $name 最终失败。可能原因：Gitee 服务器响应慢/超时或网络不稳定；" >&2
+  echo "      可稍后手动重跑本工作流（已成功上传的附件会跳过）或到 Gitee 网页手动补传。" >&2
   return 1
 }
 
@@ -177,7 +203,7 @@ fi
 
 # ---- 4. 清理旧 Release（仅保留最近 KEEP 个，默认不清理） ----
 cleanup_old_releases() {
-  local keep="$1" list ids id idx=0
+  local keep="$1" list ids id total=0 idx=0 delete_count
   if ! [[ "$keep" =~ ^[0-9]+$ ]] || [[ "$keep" -eq 0 ]]; then
     return 0
   fi
@@ -185,19 +211,28 @@ cleanup_old_releases() {
   list="$(curl -fsSL -G "$API/repos/$REPO/releases" \
     --data-urlencode "access_token=$GITEE_TOKEN" \
     --data-urlencode "per_page=100" 2>/dev/null || true)"
-  # 只取 release 外层 id（按创建时间倒序），author.id 等内嵌 id 不匹配
+  # 注意：Gitee releases 列表按创建时间升序返回（旧版本在前），
+  # 因此保留列表末尾 keep 个，删除开头多余的旧 Release。author.id 等内嵌 id 不匹配
   ids="$(printf '%s' "$list" \
     | grep -oE '\{"id":[0-9]+,"tag_name"' \
     | grep -oE '[0-9]+')"
   for id in $ids; do
+    total=$((total + 1))
+  done
+  delete_count=$((total - keep))
+  if [[ $delete_count -le 0 ]]; then
+    echo "==> 当前共 ${total} 个 Release（<=${keep}），无需清理"
+    return 0
+  fi
+  for id in $ids; do
     idx=$((idx + 1))
-    if [[ $idx -le "$keep" ]]; then
-      continue
+    if [[ $idx -gt $delete_count ]]; then
+      break
     fi
-    echo "==> 删除旧 Release #$id（保留最近 ${keep} 个）"
+    echo "==> 删除最旧 Release #${id}（共 ${total} 个，仅保留最近 ${keep} 个）"
     curl -fsSL -X DELETE "$API/repos/$REPO/releases/$id" \
       --data-urlencode "access_token=$GITEE_TOKEN" >/dev/null 2>&1 \
-      || echo "警告：删除 Release #$id 失败" >&2
+      || echo "警告：删除 Release #${id} 失败" >&2
   done
 }
 
