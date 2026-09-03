@@ -72,82 +72,124 @@ abstract final class Update {
         hasUpdate = BuildConfig.buildTime < latest;
       }
       if (!hasUpdate) {
+        // 已是最新版本：手动检查时提示，并可重新下载当前版本
         if (!isAuto) {
-          SmartDialog.showToast(
-              '已是最新版本: $tagName, 当前版本: ${BuildConfig.versionName}+${BuildConfig.versionCode}');
-        }
-      } else {
-        SmartDialog.show(
-          animationType: SmartAnimationType.centerFade_otherSlide,
-          builder: (context) {
-            final colorScheme = ColorScheme.of(context);
-            Widget downloadBtn(String text, {String? ext}) => TextButton(
-              onPressed: () => onDownload(data, ext: ext),
-              child: Text(text),
-            );
-            return AlertDialog(
-              title: const Text('🎉 发现新版本 '),
-              content: SizedBox(
-                height: 280,
-                child: SingleChildScrollView(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '${data['tag_name']}',
-                        style: const TextStyle(fontSize: 20),
-                      ),
-                      const SizedBox(height: 8),
-                      Text('${data['body']}'),
-                      TextButton(
-                        onPressed: () => PageUtils.launchURL(
-                          'https://gitee.com/sakura-fly/PiliPlus/commits',
-                        ),
-                        child: Text(
-                          "点此查看完整更新(即commit)内容",
-                          style: TextStyle(color: colorScheme.primary),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              actions: [
-                if (isAuto)
+          final String currentVersion =
+              '${BuildConfig.versionName}+${BuildConfig.versionCode}';
+          SmartDialog.show(
+            animationType: SmartAnimationType.centerFade_otherSlide,
+            builder: (context) {
+              final colorScheme = ColorScheme.of(context);
+              return AlertDialog(
+                title: const Text('当前已是最新版本'),
+                content: Text('最新版本: $tagName\n当前版本: $currentVersion\n\n是否重新下载安装包？'),
+                actions: [
                   TextButton(
-                    onPressed: () {
-                      SmartDialog.dismiss();
-                      GStorage.setting.put(SettingBoxKey.autoUpdate, false);
-                    },
+                    onPressed: SmartDialog.dismiss,
                     child: Text(
-                      '不再提醒',
+                      '取消',
                       style: TextStyle(color: colorScheme.outline),
                     ),
                   ),
-                TextButton(
-                  onPressed: SmartDialog.dismiss,
-                  child: Text(
-                    '取消',
-                    style: TextStyle(color: colorScheme.outline),
+                  TextButton(
+                    onPressed: () {
+                      SmartDialog.dismiss();
+                      showDownloadDialog(data, title: '重新下载安装包');
+                    },
+                    child: Text(
+                      '重新下载',
+                      style: TextStyle(color: colorScheme.primary),
+                    ),
                   ),
-                ),
-                if (Platform.isWindows) ...[
-                  downloadBtn('zip', ext: 'zip'),
-                  downloadBtn('exe', ext: 'exe'),
-                ] else if (Platform.isLinux) ...[
-                  downloadBtn('rpm', ext: 'rpm'),
-                  downloadBtn('deb', ext: 'deb'),
-                  downloadBtn('targz', ext: 'tar.gz'),
-                ] else
-                  downloadBtn('Gitee'),
-              ],
-            );
-          },
-        );
+                ],
+              );
+            },
+          );
+        }
+      } else {
+        showDownloadDialog(data, isAuto: isAuto);
       }
     } catch (e) {
       if (kDebugMode) debugPrint('failed to check update: $e');
     }
+  }
+
+  /// 下载安装包弹窗：有新版本或手动重新下载时复用
+  static void showDownloadDialog(
+    Map data, {
+    String? title,
+    bool isAuto = false,
+  }) {
+    final String dialogTitle = title ?? '🎉 发现新版本 ';
+    // 仅在自动检测到新版本时提供"不再提醒"
+    final bool showNoMoreRemind = isAuto;
+    SmartDialog.show(
+      animationType: SmartAnimationType.centerFade_otherSlide,
+      builder: (context) {
+        final colorScheme = ColorScheme.of(context);
+        Widget downloadBtn(String text, {String? ext}) => TextButton(
+          onPressed: () => onDownload(data, ext: ext),
+          child: Text(text),
+        );
+        return AlertDialog(
+          title: Text(dialogTitle),
+          content: SizedBox(
+            height: 280,
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '${data['tag_name']}',
+                    style: const TextStyle(fontSize: 20),
+                  ),
+                  const SizedBox(height: 8),
+                  Text('${data['body']}'),
+                  TextButton(
+                    onPressed: () => PageUtils.launchURL(
+                      'https://gitee.com/sakura-fly/PiliPlus/commits',
+                    ),
+                    child: Text(
+                      "点此查看完整更新(即commit)内容",
+                      style: TextStyle(color: colorScheme.primary),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            if (showNoMoreRemind)
+              TextButton(
+                onPressed: () {
+                  SmartDialog.dismiss();
+                  GStorage.setting.put(SettingBoxKey.autoUpdate, false);
+                },
+                child: Text(
+                  '不再提醒',
+                  style: TextStyle(color: colorScheme.outline),
+                ),
+              ),
+            TextButton(
+              onPressed: SmartDialog.dismiss,
+              child: Text(
+                '取消',
+                style: TextStyle(color: colorScheme.outline),
+              ),
+            ),
+            if (Platform.isWindows) ...[
+              downloadBtn('zip', ext: 'zip'),
+              downloadBtn('exe', ext: 'exe'),
+            ] else if (Platform.isLinux) ...[
+              downloadBtn('rpm', ext: 'rpm'),
+              downloadBtn('deb', ext: 'deb'),
+              downloadBtn('targz', ext: 'tar.gz'),
+            ] else
+              downloadBtn('Gitee'),
+          ],
+        );
+      },
+    );
   }
 
   // 下载适用于当前系统的安装包

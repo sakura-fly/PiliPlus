@@ -137,7 +137,7 @@ upload_file() {
     echo "==> 上传 ${name}（第 ${attempt}/3 次，filename=${name_form}）"
     # stdout 第一行 HTTP 状态码，第二行统计：已上传字节 总耗时(秒)
     out="$(curl -sS -o "$tmp" -w '%{http_code}\n%{size_upload} %{time_total}' \
-      --connect-timeout 30 --max-time 300 \
+      --connect-timeout 30 --max-time 900 \
       -X POST "$API/repos/$REPO/releases/$RELEASE_ID/attach_files" \
       -H 'Expect:' \
       -F "access_token=$GITEE_TOKEN" \
