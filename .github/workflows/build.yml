@@ -46,7 +46,7 @@ on:
 
 jobs:
   auto_tag:
-    if: ${{ github.event_name == 'push' }}
+    # push 与手动触发都生成版本号/tag
     name: auto tag
     runs-on: ubuntu-latest
     permissions: write-all
@@ -185,7 +185,7 @@ jobs:
       
 
       - name: Flutter Build Release Apk
-        if: ${{ github.event_name == 'push' }}
+        # push 与手动触发都会构建
         run: flutter build apk --release --split-per-abi --dart-define-from-file=pili_release.json --pub
       #
       #      - name: Flutter Build Dev Apk
