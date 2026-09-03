@@ -217,11 +217,11 @@ jobs:
           GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
         shell: bash
         run: |
-          # Gitee 仅保留 Android armeabi-v7a 安装包，且只保留最近 5 个 Release
+          # Gitee 仅保留 Android arm64-v8a 安装包，且只保留最近 5 个 Release
           bash lib/scripts/gitee_release_upload.sh \
             --repo sakura-fly/PiliPlus \
             --tag "${{ github.event.inputs.tag || needs.auto_tag.outputs.auto_tag }}" \
-            --files 'PiliPlus_android_*armeabi-v7a.apk' \
+            --files 'PiliPlus_android_*arm64-v8a.apk' \
             --keep 5
 
       - name: 上传

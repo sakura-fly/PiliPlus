@@ -22,8 +22,10 @@ abstract final class Update {
     if (kDebugMode) return;
     SmartDialog.dismiss();
     try {
+      // Android 走 Gitee（国内快，Gitee 只发布 Android 包）；其他平台走 GitHub
+      final bool fromGitee = Platform.isAndroid;
       final res = await Request().get(
-        Api.latestApp,
+        fromGitee ? Api.giteeLatestApp : Api.githubLatestApp,
         options: Options(
           headers: {'user-agent': BrowserUa.mob},
           extra: {'account': const NoAccount()},
@@ -31,7 +33,8 @@ abstract final class Update {
       );
       if (res.data is Map || res.data.isEmpty) {
         if (!isAuto) {
-          SmartDialog.showToast('检查更新失败，Gitee接口未返回数据，请检查网络');
+          SmartDialog.showToast(
+              '检查更新失败，${fromGitee ? 'Gitee' : 'GitHub'}接口未返回数据，请检查网络');
         }
         return;
       }
@@ -46,16 +49,21 @@ abstract final class Update {
           data = current.cast<String, dynamic>();
         }
       }
-      // gitee 的 release 不内嵌附件，需单独获取附件列表并合并到 assets
-      final attachRes = await Request().get(
-        '${Api.giteeAttachFiles}${data['id']}/attach_files',
-        queryParameters: {'per_page': 100},
-        options: Options(
-          headers: {'user-agent': BrowserUa.mob},
-          extra: {'account': const NoAccount()},
-        ),
-      );
-      data['assets'] = attachRes.data is List ? attachRes.data : [];
+      if (fromGitee) {
+        // Gitee 的 release 不内嵌附件，需单独获取附件列表并合并到 assets
+        final attachRes = await Request().get(
+          '${Api.giteeAttachFiles}${data['id']}/attach_files',
+          queryParameters: {'per_page': 100},
+          options: Options(
+            headers: {'user-agent': BrowserUa.mob},
+            extra: {'account': const NoAccount()},
+          ),
+        );
+        data['assets'] = attachRes.data is List ? attachRes.data : [];
+      } else {
+        // GitHub release 自带 assets 字段
+        data['assets'] ??= [];
+      }
       // 用版本号(versionCode)判断是否有更新：Release 创建时间总是晚于构建时间，
       // 按 created_at 时间戳比较会导致"已是最新版仍提示更新"的误报
       final String tagName = '${data['tag_name']}';
@@ -196,14 +204,21 @@ abstract final class Update {
   static Future<void> onDownload(Map data, {String? ext}) async {
     SmartDialog.dismiss();
     try {
-      final String plat = Platform.isAndroid
-          ? (await DeviceInfoPlugin().androidInfo).supportedAbis.first
-          : Platform.operatingSystem;
-      var asset = findAsset(data, plat: plat, ext: ext);
-      // Android 端 Gitee 可能只上传了 armeabi-v7a：精确 ABI（如 arm64-v8a）
-      // 匹配不到时回退到任意 Android 安装包，保证仍能直接下载（v7a 兼容 arm64 设备）
-      if (asset == null && Platform.isAndroid) {
-        asset = findAsset(data, plat: 'android', ext: ext);
+      // Android：Gitee 通常只发布单一 ABI（如 arm64-v8a），按设备支持的 ABI
+      // 依次尝试匹配（arm64-v8a 优先，找不到再试 v7a）；其余平台用操作系统名匹配
+      final AndroidDeviceInfo? androidInfo = Platform.isAndroid
+          ? await DeviceInfoPlugin().androidInfo
+          : null;
+      final String plat =
+          androidInfo?.supportedAbis.first ?? Platform.operatingSystem;
+      Map<String, dynamic>? asset;
+      if (androidInfo != null) {
+        for (final abi in androidInfo.supportedAbis) {
+          asset = findAsset(data, plat: abi, ext: ext);
+          if (asset != null) break;
+        }
+      } else {
+        asset = findAsset(data, plat: plat, ext: ext);
       }
       if (asset == null) {
         throw UnsupportedError('platform not found: $plat');

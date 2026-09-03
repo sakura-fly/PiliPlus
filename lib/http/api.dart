@@ -409,9 +409,13 @@ abstract final class Api {
   // 黑名单
   static const String blackLst = '/x/relation/blacks';
 
-  // gitee 获取版本列表（注意：Gitee 按创建时间升序返回，旧版本在前，需取最新一条）
-  static const String latestApp =
+  // gitee 获取版本列表（Android 更新检测；注意 Gitee 按创建时间升序返回，旧版本在前，需取最新一条）
+  static const String giteeLatestApp =
       'https://gitee.com/api/v5/repos/sakura-fly/PiliPlus/releases?per_page=100';
+
+  // github 获取版本列表（Android 之外的平台更新检测；GitHub 按创建时间降序返回）
+  static const String githubLatestApp =
+      'https://api.github.com/repos/sakura-fly/PiliPlus/releases?per_page=100';
 
   // gitee 获取指定 release 的附件列表（release id + '/attach_files'）
   static const String giteeAttachFiles =
