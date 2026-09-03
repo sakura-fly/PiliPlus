@@ -382,7 +382,7 @@ abstract final class Update {
   static Future<void> _ensureNotification() async {
     if (_notificationReady) return;
     await _notifications.initialize(
-      const InitializationSettings(
+      settings: const InitializationSettings(
         android: AndroidInitializationSettings('@mipmap/ic_launcher'),
       ),
     );
@@ -406,10 +406,10 @@ abstract final class Update {
     try {
       await _ensureNotification();
       await _notifications.show(
-        _downloadNotifyId,
-        title,
-        body,
-        NotificationDetails(
+        id: _downloadNotifyId,
+        title: title,
+        body: body,
+        notificationDetails: NotificationDetails(
           android: AndroidNotificationDetails(
             'piliplus_update_download',
             '应用更新下载',
