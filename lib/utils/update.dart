@@ -199,7 +199,12 @@ abstract final class Update {
       final String plat = Platform.isAndroid
           ? (await DeviceInfoPlugin().androidInfo).supportedAbis.first
           : Platform.operatingSystem;
-      final asset = findAsset(data, plat: plat, ext: ext);
+      var asset = findAsset(data, plat: plat, ext: ext);
+      // Android 端 Gitee 可能只上传了 armeabi-v7a：精确 ABI（如 arm64-v8a）
+      // 匹配不到时回退到任意 Android 安装包，保证仍能直接下载（v7a 兼容 arm64 设备）
+      if (asset == null && Platform.isAndroid) {
+        asset = findAsset(data, plat: 'android', ext: ext);
+      }
       if (asset == null) {
         throw UnsupportedError('platform not found: $plat');
       }
