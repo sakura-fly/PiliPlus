@@ -5,9 +5,51 @@ import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager.LayoutParams
+import androidx.core.content.FileProvider
 import com.ryanheise.audioservice.AudioServiceActivity
+import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.plugin.common.MethodChannel
+import java.io.File
 
 class MainActivity : AudioServiceActivity() {
+    override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
+        super.configureFlutterEngine(flutterEngine)
+        // 安装 APK：由 update.dart 下载完成后调用（FileProvider 共享文件）
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "piliplus/install_apk")
+            .setMethodCallHandler { call, result ->
+                if (call.method == "installApk") {
+                    val path = call.argument<String>("path")
+                    if (path.isNullOrEmpty()) {
+                        result.error("bad_args", "path is null or empty", null)
+                        return@setMethodCallHandler
+                    }
+                    try {
+                        val file = File(path)
+                        if (!file.exists()) {
+                            result.error("file_not_found", "file not found: $path", null)
+                            return@setMethodCallHandler
+                        }
+                        val uri = FileProvider.getUriForFile(
+                            this,
+                            "$packageName.fileprovider",
+                            file
+                        )
+                        val intent = Intent(Intent.ACTION_VIEW).apply {
+                            setDataAndType(uri, "application/vnd.android.package-archive")
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                        startActivity(intent)
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.error("install_failed", e.message, null)
+                    }
+                } else {
+                    result.notImplemented()
+                }
+            }
+    }
+
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
         if (AndroidHelper.isFoldable) {

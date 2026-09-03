@@ -13,6 +13,8 @@ import 'package:device_info_plus/device_info_plus.dart';
 import 'package:dio/dio.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
+import 'package:flutter/services.dart' show MethodChannel;
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_smart_dialog/flutter_smart_dialog.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -285,39 +287,74 @@ abstract final class Update {
   }
 
   /// App 内直接下载安装包
-  static void downloadInApp(String url, String fileName) {
-    Future<void> run() async {
-      try {
-        // 优先系统下载目录（桌面/Android 公共下载），不可用时回退应用文档目录
-        final Directory dir = await getDownloadsDirectory() ??
+  static Future<void> downloadInApp(String url, String fileName) async {
+    try {
+      final bool isAndroid = Platform.isAndroid;
+      final Directory dir;
+      if (isAndroid) {
+        // Android 存应用专属外部目录（无需存储权限，FileProvider 可直接共享给安装器）
+        dir = await getExternalStorageDirectory() ??
             await getApplicationDocumentsDirectory();
-        final String savePath = '${dir.path}${Platform.pathSeparator}$fileName';
-        final file = File(savePath);
-        if (file.existsSync()) {
-          file.deleteSync(); // 避免续传残留导致安装包损坏
-        }
+      } else {
+        // 桌面等其他平台：系统下载目录
+        dir = await getDownloadsDirectory() ??
+            await getApplicationDocumentsDirectory();
+      }
+      final String savePath = '${dir.path}${Platform.pathSeparator}$fileName';
+      final file = File(savePath);
+      if (file.existsSync()) {
+        file.deleteSync(); // 避免续传残留导致安装包损坏
+      }
+      if (isAndroid) {
+        // Android：通知栏显示下载进度
+        await _updateDownloadNotification(
+          title: '正在下载 $fileName',
+          body: '0%',
+          showProgress: true,
+          progress: 0,
+        );
+      } else {
         SmartDialog.showToast('开始下载: $fileName');
-        DownloadManager(
-          url: url,
-          path: savePath,
-          onReceiveProgress: (received, total) {},
-          onDone: ([Object? error]) {
-            if (error != null) {
-              SmartDialog.showToast('下载失败: $error');
-              return;
+      }
+      int lastPercent = -1;
+      DownloadManager(
+        url: url,
+        path: savePath,
+        onReceiveProgress: (received, total) {
+          if (!isAndroid) return;
+          final int percent = total <= 0 ? 0 : received * 100 ~/ total;
+          if (percent == lastPercent) return;
+          lastPercent = percent;
+          _updateDownloadNotification(
+            title: '正在下载 $fileName',
+            body: '$percent%',
+            showProgress: true,
+            progress: percent,
+          );
+        },
+        onDone: ([Object? error]) async {
+          if (error != null) {
+            if (isAndroid) {
+              await _updateDownloadNotification(title: '下载失败', body: '$error');
             }
+            SmartDialog.showToast('下载失败: $error');
+            return;
+          }
+          if (isAndroid) {
+            await _updateDownloadNotification(title: '下载完成', body: fileName);
+            // 下载完成：弹窗询问是否安装
+            _showInstallDialog(savePath, fileName);
+          } else {
             SmartDialog.showToast('下载完成: $savePath');
-            if (!Platform.isAndroid && !Platform.isIOS) {
+            if (!Platform.isIOS) {
               openInFolder(savePath);
             }
-          },
-        );
-      } catch (e) {
-        SmartDialog.showToast('下载失败: $e');
-      }
+          }
+        },
+      );
+    } catch (e) {
+      SmartDialog.showToast('下载失败: $e');
     }
-
-    run();
   }
 
   /// 在文件管理器中显示下载好的文件（桌面端）
@@ -332,6 +369,117 @@ abstract final class Update {
       }
     } catch (e) {
       if (kDebugMode) debugPrint('open folder error: $e');
+    }
+  }
+
+  // ---- Android 通知栏下载进度与 APK 安装 ----
+
+  static final FlutterLocalNotificationsPlugin _notifications =
+      FlutterLocalNotificationsPlugin();
+  static bool _notificationReady = false;
+  static const int _downloadNotifyId = 20240601; // 下载通知 id
+
+  static Future<void> _ensureNotification() async {
+    if (_notificationReady) return;
+    await _notifications.initialize(
+      const InitializationSettings(
+        android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+      ),
+    );
+    if (Platform.isAndroid) {
+      await _notifications
+          .resolvePlatformSpecificImplementation<
+              AndroidFlutterLocalNotificationsPlugin>()
+          ?.requestNotificationsPermission();
+    }
+    _notificationReady = true;
+  }
+
+  /// 更新/展示下载通知（Android）
+  static Future<void> _updateDownloadNotification({
+    required String title,
+    String? body,
+    bool showProgress = false,
+    int progress = 0,
+  }) async {
+    if (!Platform.isAndroid) return;
+    try {
+      await _ensureNotification();
+      await _notifications.show(
+        _downloadNotifyId,
+        title,
+        body,
+        NotificationDetails(
+          android: AndroidNotificationDetails(
+            'piliplus_update_download',
+            '应用更新下载',
+            channelDescription: '应用更新安装包下载进度',
+            importance: Importance.low,
+            priority: Priority.low,
+            showProgress: showProgress,
+            maxProgress: 100,
+            progress: progress,
+            onlyAlertOnce: true,
+            ongoing: showProgress,
+          ),
+        ),
+      );
+    } catch (e) {
+      if (kDebugMode) debugPrint('notification error: $e');
+    }
+  }
+
+  /// 下载完成后弹窗询问是否安装（Android）
+  static void _showInstallDialog(String apkPath, String fileName) {
+    SmartDialog.show(
+      animationType: SmartAnimationType.centerFade_otherSlide,
+      builder: (context) {
+        final colorScheme = ColorScheme.of(context);
+        return AlertDialog(
+          title: const Text('下载完成'),
+          content: Text('$fileName\n\n是否立即安装？'),
+          actions: [
+            TextButton(
+              onPressed: SmartDialog.dismiss,
+              child: Text(
+                '取消',
+                style: TextStyle(color: colorScheme.outline),
+              ),
+            ),
+            TextButton(
+              onPressed: () async {
+                SmartDialog.dismiss();
+                final bool ok = await installApk(apkPath);
+                if (!ok) {
+                  SmartDialog.showToast('无法启动安装，请到系统文件管理器手动安装');
+                }
+              },
+              child: Text(
+                '立即安装',
+                style: TextStyle(color: colorScheme.primary),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  /// 调原生安装 APK（Android FileProvider）
+  static const MethodChannel _installChannel =
+      MethodChannel('piliplus/install_apk');
+
+  static Future<bool> installApk(String path) async {
+    if (!Platform.isAndroid) return false;
+    try {
+      final bool? ok = await _installChannel.invokeMethod<bool>(
+        'installApk',
+        {'path': path},
+      );
+      return ok ?? false;
+    } catch (e) {
+      if (kDebugMode) debugPrint('install apk error: $e');
+      return false;
     }
   }
 }
