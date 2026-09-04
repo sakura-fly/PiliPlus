@@ -635,6 +635,18 @@ List<SettingsModel> get extraSettings => [
       }
     },
   ),
+  // Android：更新包（APK）下载相关
+  NormalModel(
+    title: '更新包下载位置',
+    leading: const Icon(Icons.folder_outlined),
+    getSubtitle: () => Update.downloadDirLabel,
+    onTap: _showUpdateDownloadDirDialog,
+  ),
+  NormalModel(
+    title: '打开下载路径',
+    leading: const Icon(Icons.folder_open_outlined),
+    onTap: (context, setState) => Update.openDownloadFolder(),
+  ),
 ];
 
 Future<void> audioNormalization(
@@ -767,6 +779,44 @@ void _showDownPathDialog(BuildContext context, VoidCallback setState) {
             GStorage.setting.put(SettingBoxKey.downloadPath, path);
           },
           child: const Text('设置新路径', style: TextStyle(fontSize: 14)),
+        ),
+      ],
+    ),
+  );
+}
+
+// 更新包（APK）下载位置设置：切换公共/私有目录，并可打开下载路径
+void _showUpdateDownloadDirDialog(BuildContext context, VoidCallback setState) {
+  showDialog(
+    context: context,
+    builder: (context) => SimpleDialog(
+      clipBehavior: Clip.hardEdge,
+      contentPadding: const EdgeInsets.symmetric(vertical: 12),
+      children: [
+        DialogOption(
+          onPressed: () {
+            Get.back();
+            Update.openDownloadFolder();
+          },
+          child: const Text('打开下载路径', style: TextStyle(fontSize: 14)),
+        ),
+        DialogOption(
+          onPressed: () {
+            Get.back();
+            if (Pref.updateDownloadDir == 'public') return;
+            GStorage.setting.put(SettingBoxKey.updateDownloadDir, 'public');
+            setState();
+          },
+          child: const Text('公共下载目录（Download/PiliPlus）', style: TextStyle(fontSize: 14)),
+        ),
+        DialogOption(
+          onPressed: () {
+            Get.back();
+            if (Pref.updateDownloadDir == 'private') return;
+            GStorage.setting.put(SettingBoxKey.updateDownloadDir, 'private');
+            setState();
+          },
+          child: const Text('应用私有目录（仅供自动安装）', style: TextStyle(fontSize: 14)),
         ),
       ],
     ),

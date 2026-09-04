@@ -9,6 +9,7 @@ import 'package:PiliPlus/utils/accounts/account.dart';
 import 'package:PiliPlus/utils/page_utils.dart';
 import 'package:PiliPlus/utils/storage.dart';
 import 'package:PiliPlus/utils/storage_key.dart';
+import 'package:PiliPlus/utils/storage_pref.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:dio/dio.dart';
 import 'package:path_provider/path_provider.dart';
@@ -341,9 +342,22 @@ abstract final class Update {
             return;
           }
           if (isAndroid) {
-            await _updateDownloadNotification(title: '下载完成', body: fileName);
+            // 按设置把 APK 保存/导出到公共下载目录（默认），失败则保留应用私有目录
+            String finalPath = savePath;
+            if (Pref.updateDownloadDir == 'public') {
+              final String? exported =
+                  await exportToDownloads(savePath, fileName);
+              if (exported != null) {
+                try {
+                  File(savePath).deleteSync();
+                } catch (_) {}
+                finalPath = exported;
+              }
+            }
+            await _updateDownloadNotification(
+                title: '下载完成', body: finalPath);
             // 下载完成：弹窗询问是否安装
-            _showInstallDialog(savePath, fileName);
+            _showInstallDialog(finalPath, fileName);
           } else {
             SmartDialog.showToast('下载完成: $savePath');
             if (!Platform.isIOS) {
@@ -479,8 +493,8 @@ abstract final class Update {
       return ok ?? false;
     } on PlatformException catch (e) {
       if (e.code == 'install_unknown_sources_required') {
-        // 已自动跳转系统"安装未知应用"设置页，提示用户开启后回来重试
-        SmartDialog.showToast('请在系统设置中允许"安装未知应用"后，再次点击安装');
+        // 已自动跳转系统"安装未知应用"设置页；授权返回后 onResume 会自动继续安装
+        SmartDialog.showToast('请在系统设置中允许"安装未知应用"，返回后将自动继续安装');
         return true; // 已引导，不再走兜底提示
       }
       if (kDebugMode) debugPrint('install apk error: $e');
@@ -490,4 +504,37 @@ abstract final class Update {
       return false;
     }
   }
+
+  /// 导出 APK 到公共下载目录 Download/PiliPlus（Android），成功返回公共路径，失败返回 null
+  static Future<String?> exportToDownloads(String path, String fileName) async {
+    if (!Platform.isAndroid) return null;
+    try {
+      return await _installChannel.invokeMethod<String>(
+        'exportToDownloads',
+        {'path': path, 'fileName': fileName},
+      );
+    } catch (e) {
+      if (kDebugMode) debugPrint('export to downloads error: $e');
+      return null;
+    }
+  }
+
+  /// 打开更新包下载路径（Android 系统文件管理器）
+  static Future<void> openDownloadFolder() async {
+    if (!Platform.isAndroid) return;
+    if (Pref.updateDownloadDir == 'private') {
+      SmartDialog.showToast('当前为应用私有目录，请先在设置中切换到公共下载目录');
+      return;
+    }
+    try {
+      await _installChannel.invokeMethod<void>('openDownloadsFolder');
+    } catch (e) {
+      SmartDialog.showToast('无法打开下载路径: $e');
+    }
+  }
+
+  /// 更新包下载位置说明（设置页展示）
+  static String get downloadDirLabel => Pref.updateDownloadDir == 'public'
+      ? 'Download/PiliPlus（公共下载，推荐）'
+      : '应用私有目录（仅供自动安装）';
 }

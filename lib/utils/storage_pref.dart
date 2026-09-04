@@ -620,6 +620,12 @@ abstract final class Pref {
   static num get maxCacheSize =>
       _setting.get(SettingBoxKey.maxCacheSize) ?? 1 << 30;
 
+  /// APK 更新包下载位置：'public' = 公共 Download/PiliPlus（默认），'private' = 应用私有目录
+  static String get updateDownloadDir => _setting.get(
+    SettingBoxKey.updateDownloadDir,
+    defaultValue: 'public',
+  );
+
   static bool get optTabletNav =>
       _setting.get(SettingBoxKey.optTabletNav, defaultValue: true);
 
