@@ -51,12 +51,14 @@ git config --global http.lowSpeedTime 600
 export FLUTTER_ROOT="$HOME/flutter"
 # 版本与 pubspec.yaml 的 flutter 字段保持一致
 FLUTTER_VERSION=3.47.2
-if [ -d "$FLUTTER_ROOT" ] && git -C "$FLUTTER_ROOT" rev-parse --git-dir >/dev/null 2>&1; then
-  # 命中流水线构建缓存（/root/flutter），跳过克隆。
-  # 注意：以后升级 FLUTTER_VERSION 时，需在 Gitee Go 控制台清一次该缓存（或等 30 天自动失效）
+if [ -x "$FLUTTER_ROOT/bin/flutter" ] && git -C "$FLUTTER_ROOT" rev-parse --git-dir >/dev/null 2>&1; then
+  # 命中有效的 Flutter SDK（含可执行文件与 git 元数据），跳过克隆
   echo "使用已缓存的 Flutter SDK：$FLUTTER_ROOT"
 else
-  [ -d "$FLUTTER_ROOT" ] && rm -rf "$FLUTTER_ROOT"
+  # 不直接 rm 缓存目录：缓存注入的目录可能被占用/只读，rm 会报 Device or resource busy。
+  # 改为克隆到临时目录，再整体替换；替换失败则本次直接用临时目录继续
+  FLUTTER_TMP="$HOME/.flutter_tmp"
+  rm -rf "$FLUTTER_TMP" 2>/dev/null || true
   # Gitee 执行器访问 GitHub 很不稳定（实测卡 16 分钟后才失败），
   # 因此 Gitee 镜像优先，GitHub 作后备；克隆加 300s 超时，失败立即切换
   FLUTTER_CLONE_OK=0
@@ -65,16 +67,27 @@ else
       "https://github.com/flutter/flutter.git"
   do
     echo "尝试克隆 Flutter SDK：${url}"
-    if timeout 300 git clone -q --depth 1 -b "${FLUTTER_VERSION}" "$url" "$FLUTTER_ROOT"; then
+    if timeout 300 git clone -q --depth 1 -b "${FLUTTER_VERSION}" "$url" "$FLUTTER_TMP"; then
       FLUTTER_CLONE_OK=1
       break
     fi
     echo "克隆失败，清理后尝试下一个镜像..."
-    rm -rf "$FLUTTER_ROOT"
+    rm -rf "$FLUTTER_TMP" 2>/dev/null || true
   done
   if [ "$FLUTTER_CLONE_OK" -ne 1 ]; then
     echo "错误：Flutter SDK 克隆失败（Gitee 与 GitHub 镜像均不可用）" >&2
     exit 1
+  fi
+  # 把旧的缓存目录移走（失败不致命）
+  if [ -d "$FLUTTER_ROOT" ]; then
+    rm -rf "${FLUTTER_ROOT}.old" 2>/dev/null || true
+    mv "$FLUTTER_ROOT" "${FLUTTER_ROOT}.old" 2>/dev/null || true
+  fi
+  # 放入标准路径；若标准路径仍被占用，本次改用临时目录继续
+  if ! mv "$FLUTTER_TMP" "$FLUTTER_ROOT" 2>/dev/null; then
+    echo "警告：无法替换 $FLUTTER_ROOT（可能被缓存占用），本次使用 $FLUTTER_TMP"
+    FLUTTER_ROOT="$FLUTTER_TMP"
+    export FLUTTER_ROOT
   fi
 fi
 export PATH="$FLUTTER_ROOT/bin:$PATH"

@@ -23,9 +23,10 @@
 # 产物：只构建 arm64-v8a 单 ABI；build@gcc 暂存 apk/（7 天），
 #   publish@general_artifacts 上传制品库。
 #
-# 构建缓存：caches 会把 Flutter SDK / Android SDK(含 NDK) / pub 依赖 / Gradle 发行版与依赖
-#   存到 S3，下次构建直接下载复用，跳过重复下载（默认 30 天有效，构建成功才更新缓存）。
-#   注意：升级 Flutter/依赖版本或需强制刷新时，到 Gitee Go 控制台清除对应缓存目录。
+# 构建缓存：caches 会把 Android SDK(含 NDK) / pub 依赖 / Gradle 发行版与依赖
+#   存到 S3，下次构建直接下载复用（默认 30 天有效，构建成功才更新缓存）。
+#   注意：Flutter SDK 暂不入缓存——Gitee Go 注入的缓存目录删除会报 Device busy，
+#   且 Gitee 镜像克隆 Flutter 实测仅需数秒；升级依赖版本时清对应缓存目录即可。
 # =============================================================================
 
 version: '1.0'
@@ -99,9 +100,8 @@ stages:
             else
               echo "警告：未配置全局参数 release_key，跳过 Gitee Release 上传（仅构建 + 上传制品库）"
             fi
-        # 跨构建缓存：命中后跳过 Flutter/Android SDK/pub/Gradle 的重复下载（见文件头说明）
+        # 跨构建缓存：命中后跳过 Android SDK/pub/Gradle 的重复下载（Flutter 不入缓存，见文件头说明）
         caches:
-          - /root/flutter
           - /root/.pub-cache
           - /root/.gradle
           - /root/android-sdk
