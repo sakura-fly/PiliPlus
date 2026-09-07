@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # =============================================================================
 # PiliPlus —— Gitee Go Android 打包脚本
-# 由 .workflow/master-pipeline.yml 的 build@gcc 任务调用。
+# 由 .workflow/android-pipeline.yml 的 build@gcc 任务调用。
 # 签名密钥由 Gitee 全局参数 KEYGEN_SEED 的前 32 位派生（同一种子=同一签名）。
 # 依赖：build@gcc 执行器（Ubuntu 20.04）+ 网络
 # =============================================================================

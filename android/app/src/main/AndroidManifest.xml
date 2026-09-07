@@ -46,13 +46,22 @@
         <meta-data
             android:name="io.flutter.embedding.android.EnableImpeller"
             android:value="false" />
+        <!--
+            resizeableActivity 由 android/app/build.gradle.kts 根据构建参数 huaweiParallel 注入：
+            - huaweiParallel=true（默认）：resizeableActivity=false
+              华为/荣耀平板系统会把应用识别为“未适配平板”的手机应用，
+              从而在平板设置中提供“平行视界”入口。
+            - huaweiParallel=false：resizeableActivity=true
+              保留普通 Android 分屏/自由窗口/平板多窗口能力，但华为“平行视界”入口可能不出现。
+            画中画不受该值影响。
+        -->
         <activity
             android:name=".MainActivity"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
             android:exported="true"
             android:hardwareAccelerated="true"
             android:launchMode="singleTask"
-            android:resizeableActivity="true"
+            android:resizeableActivity="${resizeableActivity}"
             android:supportsPictureInPicture="true"
             android:theme="@style/LaunchTheme"
             android:windowSoftInputMode="adjustResize">

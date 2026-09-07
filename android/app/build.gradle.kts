@@ -17,6 +17,12 @@ if (!isBuiltInKotlinEnabled) {
     apply(plugin = "org.jetbrains.kotlin.android")
 }
 
+// 华为/荣耀平板“平行视界”构建开关：
+// 默认开启（huaweiParallel=true -> resizeableActivity=false）；
+// 需要普通 Android 分屏/多窗口时使用 --android-project-arg huaweiParallel=false 构建。
+val enableHuaweiParallelView =
+    (providers.gradleProperty("huaweiParallel").orNull ?: "true").toBoolean()
+
 android {
     namespace = "com.example.piliplus"
     compileSdk = 37
@@ -34,6 +40,8 @@ android {
         targetSdk = 37
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        manifestPlaceholders["resizeableActivity"] =
+            if (enableHuaweiParallelView) "false" else "true"
     }
 
     packagingOptions.jniLibs.useLegacyPackaging = true
