@@ -167,18 +167,24 @@ if [ -f "$GRADLE_PROPS" ]; then
   echo "Gradle JVM 内存: $(grep -h org.gradle.jvmargs "$GRADLE_PROPS" || true)"
 fi
 
-# 阿里云 Maven 镜像直接写入项目文件（PREFER_SETTINGS 模式下 init 脚本注入不可行，
-# 只能改项目文件本身；google/mavenCentral 保留作回落）
-SETTINGS_KTS=android/settings.gradle.kts
-BUILD_KTS=android/build.gradle.kts
-if [ -f "$SETTINGS_KTS" ] && ! grep -q 'maven.aliyun.com' "$SETTINGS_KTS"; then
-  sed -i 's|        gradlePluginPortal()|        maven { url = uri("https://maven.aliyun.com/repository/gradle-plugin") }\n        maven { url = uri("https://maven.aliyun.com/repository/google") }\n        maven { url = uri("https://maven.aliyun.com/repository/central") }\n        gradlePluginPortal()|' "$SETTINGS_KTS"
-  echo "已向 settings.gradle.kts 注入阿里云插件仓库"
-fi
-if [ -f "$BUILD_KTS" ] && ! grep -q 'maven.aliyun.com' "$BUILD_KTS"; then
-  sed -i '0,/        mavenCentral()/s|        mavenCentral()|        maven { url = uri("https://maven.aliyun.com/repository/google") }\n        maven { url = uri("https://maven.aliyun.com/repository/central") }\n        maven { url = uri("https://maven.aliyun.com/repository/public") }\n        mavenCentral()|' "$BUILD_KTS"
-  echo "已向 build.gradle.kts 注入阿里云依赖仓库"
-fi
+# 阿里云 Maven 镜像直接写入项目文件（PREFER_SETTINGS 模式下 init 脚本注入不可行）。
+# 旧实现只匹配 8 空格且只改第一处，settings 的 pluginManagement 与 build.gradle.kts 的
+# allprojects（4 空格）仍直连 mavenCentral 被断连；这里改为任意缩进逐行前置镜像。
+inject_aliyun_mirrors() {
+  local f="$1"
+  [ -f "$f" ] || return 0
+  grep -q 'maven.aliyun.com' "$f" && return 0   # 已注入则跳过
+  sed -i -E \
+    -e 's|^([[:space:]]*)google\(\)$|\1maven { url = uri("https://maven.aliyun.com/repository/google") }\n\1google()|' \
+    -e 's|^([[:space:]]*)mavenCentral\(\)$|\1maven { url = uri("https://maven.aliyun.com/repository/central") }\n\1mavenCentral()|' \
+    -e 's|^([[:space:]]*)gradlePluginPortal\(\)$|\1maven { url = uri("https://maven.aliyun.com/repository/gradle-plugin") }\n\1gradlePluginPortal()|' \
+    "$f"
+}
+
+inject_aliyun_mirrors android/settings.gradle.kts
+echo "settings.gradle.kts 阿里云镜像注入处数: $(grep -c 'maven.aliyun.com' android/settings.gradle.kts 2>/dev/null || echo 0)"
+inject_aliyun_mirrors android/build.gradle.kts
+echo "build.gradle.kts 阿里云镜像注入处数: $(grep -c 'maven.aliyun.com' android/build.gradle.kts 2>/dev/null || echo 0)"
 
 # 只打 arm64-v8a 单 ABI（--target-platform android-arm64 + --split-per-abi 会产出
 # app-arm64-v8a-release.apk），加快构建并避免产生 v7a/x86_64 冗余包
