@@ -2,6 +2,7 @@
 # =============================================================================
 # PiliPlus —— Gitee Go Android 打包脚本
 # 由 .workflow/android-pipeline.yml 的 build@gcc 任务调用。
+# 只构建 arm64-v8a（v8a）单 ABI 安装包，用于上传 Gitee Release。
 # 签名密钥由 Gitee 全局参数 KEYGEN_SEED 的前 32 位派生（同一种子=同一签名）。
 # 依赖：build@gcc 执行器（Ubuntu 20.04）+ 网络
 # =============================================================================
@@ -131,7 +132,7 @@ fi
 export GITHUB_WORKSPACE="$PWD"
 pwsh -File lib/scripts/patch.ps1 android || true
 
-echo "==> 7/7 构建并重命名 APK"
+echo "==> 7/7 构建 arm64-v8a 单 ABI 并重命名 APK"
 
 # Gradle 发行版改走腾讯镜像（services.gradle.org 连接超时）
 WRAPPER_PROP=android/gradle/wrapper/gradle-wrapper.properties
@@ -160,7 +161,10 @@ if [ -f "$BUILD_KTS" ] && ! grep -q 'maven.aliyun.com' "$BUILD_KTS"; then
   echo "已向 build.gradle.kts 注入阿里云依赖仓库"
 fi
 
-flutter build apk --release --split-per-abi --dart-define-from-file=pili_release.json --pub
+# 只打 arm64-v8a 单 ABI（--target-platform android-arm64 + --split-per-abi 会产出
+# app-arm64-v8a-release.apk），加快构建并避免产生 v7a/x86_64 冗余包
+flutter build apk --release --split-per-abi --target-platform android-arm64 \
+  --dart-define-from-file=pili_release.json --pub
 
 mkdir -p apk
 for file in build/app/outputs/flutter-apk/app-*-release.apk; do

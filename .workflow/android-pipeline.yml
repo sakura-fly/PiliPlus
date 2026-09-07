@@ -1,5 +1,5 @@
 # =============================================================================
-# PiliPlus —— Gitee Go 流水线：打包 Android APK
+# PiliPlus —— Gitee Go 流水线：打包 Android APK 并发布 Gitee Release
 # 按 Gitee Go 官方文档 schema 编写（help.gitee.com/gitee-go）：
 #   流水线: version/name(标识)/displayName(名称)
 #   阶段:   name/displayName/strategy/trigger/executor
@@ -12,7 +12,16 @@
 # 签名：全局参数 KEYGEN_SEED 取前 32 位 -> SHA-256 -> keytool 生成 key.jks
 #   （同一种子 = 同一签名，KEYGEN_SEED 发版后不要改动）
 #
-# 产物：build@gcc 暂存 apk/（7 天），publish@general_artifacts 上传制品库。
+# 发布：构建完成后把 arm64-v8a（v8）APK 上传到本仓库的 Gitee Release，
+#   tag 规则与 GitHub 流水线保持一致：v<versionName>+<commitCount>（如 v2.1.2+5397）；
+#   上传完成后只保留最近 5 个 Release（lib/scripts/gitee_release_upload.sh --keep 5 自动清理）。
+#   前置条件：在「仓库 -> 流水线 -> 全局参数」配置 release_key
+#   （Gitee 私人令牌，需勾选 projects 权限；值可与 GitHub 侧 Secrets 的 GITEE_TOKEN 相同。
+#   注意 Gitee Go 保留 GITEE_ 前缀，不能用 GITEE_TOKEN 命名）。
+#   未配置 release_key 时跳过 Release 上传，仅构建并上传制品库。
+#
+# 产物：只构建 arm64-v8a 单 ABI；build@gcc 暂存 apk/（7 天），
+#   publish@general_artifacts 上传制品库。
 # =============================================================================
 
 version: '1.0'
@@ -49,10 +58,43 @@ stages:
               OWNER_REPO=$(pwd | awk -F/ '{print $(NF-1)"/"$NF}')
               BRANCH="${GITEE_BRANCH:-release}"
               echo "检出代码: https://gitee.com/${OWNER_REPO}.git (分支 ${BRANCH})"
-              git clone --depth 1 -b "${BRANCH}" "https://gitee.com/${OWNER_REPO}.git" .
+              # 必须全量克隆（不能用 --depth 1）：versionCode 取 git rev-list --count HEAD，
+              # 浅克隆会使计数恒为 1，导致 Release tag 无法继续递增
+              git clone -b "${BRANCH}" "https://gitee.com/${OWNER_REPO}.git" .
+            else
+              # 工作区已有代码（Gitee Go 自带检出）
+              OWNER_REPO="${OWNER_REPO:-sakura-fly/PiliPlus}"
             fi
             pwd
+            # 若执行器给出的是浅克隆，补全历史，保证提交数/versionCode 准确
+            if git rev-parse --is-shallow-repository 2>/dev/null | grep -q true; then
+              echo "检出为浅克隆，补全历史..."
+              git fetch --unshallow || echo "警告：补全历史失败，Release tag 可能不递增"
+            fi
+
+            # 在 gitee_android_build.sh 改写 pubspec.yaml 之前计算 Release tag：
+            #   v<versionName>+<commitCount>，与既有 Gitee Release（v2.1.2+5396 ...）同规则
+            VERSION_NAME=$(sed -nE 's/^version:[[:space:]]*([0-9.]+).*/\1/p' pubspec.yaml | head -1)
+            VERSION_CODE=$(git rev-list --count HEAD)
+            RELEASE_TAG="v${VERSION_NAME}+${VERSION_CODE}"
+            echo "Release tag: ${RELEASE_TAG}"
+
             bash lib/scripts/gitee_android_build.sh
+
+            # 上传 arm64-v8a APK 到 Gitee Release，并只保留最近 5 个 Release
+            # 全局参数名为 release_key（Gitee Go 禁止 GITEE_ 前缀）；
+            # gitee_release_upload.sh 读取 GITEE_TOKEN 环境变量，这里映射一下
+            export GITEE_TOKEN="${release_key:-}"
+            if [ -n "${GITEE_TOKEN:-}" ]; then
+              bash lib/scripts/gitee_release_upload.sh \
+                --repo "${OWNER_REPO:-sakura-fly/PiliPlus}" \
+                --tag "${RELEASE_TAG}" \
+                --commitish "${GITEE_BRANCH:-release}" \
+                --files 'apk/PiliPlus_android_*_arm64-v8a.apk' \
+                --keep 5 || echo "警告：Gitee Release 上传失败（详见上方日志），其余产物不受影响"
+            else
+              echo "警告：未配置全局参数 release_key，跳过 Gitee Release 上传（仅构建 + 上传制品库）"
+            fi
         artifacts:
           - name: BUILD_ARTIFACT
             path:
@@ -67,3 +109,4 @@ stages:
 variables:
   global:
     - KEYGEN_SEED
+    - release_key
