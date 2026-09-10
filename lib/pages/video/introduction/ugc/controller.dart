@@ -47,6 +47,8 @@ import 'package:flutter_smart_dialog/flutter_smart_dialog.dart';
 import 'package:get/get.dart';
 
 class UgcIntroController extends CommonIntroController with ReloadMixin {
+  UgcIntroController({super.routeArguments});
+
   late final RxBool expand;
   final RxBool status = true.obs;
 
@@ -79,7 +81,7 @@ class UgcIntroController extends CommonIntroController with ReloadMixin {
         }
       });
     }
-    videoDetail.value.title = Get.arguments['title'] ?? '';
+    videoDetail.value.title = (routeArguments ?? Get.arguments)['title'] ?? '';
   }
 
   // 获取视频简介&分p

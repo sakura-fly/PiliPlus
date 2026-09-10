@@ -639,6 +639,9 @@ abstract final class Pref {
     return horizontalScreen;
   }
 
+  static bool get tabletSplitScreen =>
+      _setting.get(SettingBoxKey.tabletSplitScreen, defaultValue: false);
+
   static String get banWordForDyn =>
       _setting.get(SettingBoxKey.banWordForDyn, defaultValue: '');
 

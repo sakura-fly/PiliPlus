@@ -886,7 +886,7 @@ class ReplyItemGrpc extends StatelessWidget {
                         try {
                           SmartDialog.showToast('跳转至：$matchStr');
                           Get.find<VideoDetailController>(
-                            tag: Get.arguments['heroTag'],
+                            tag: getTag?.call() ?? Get.arguments['heroTag'],
                           ).plPlayerController.seekTo(
                             Duration(
                               seconds: DurationUtils.parseDuration(matchStr),

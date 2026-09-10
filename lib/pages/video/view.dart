@@ -39,6 +39,7 @@ import 'package:PiliPlus/pages/video/introduction/ugc/widgets/page.dart';
 import 'package:PiliPlus/pages/video/introduction/ugc/widgets/season.dart';
 import 'package:PiliPlus/pages/video/member/controller.dart';
 import 'package:PiliPlus/pages/video/member/view.dart';
+import 'package:PiliPlus/pages/video/related/controller.dart';
 import 'package:PiliPlus/pages/video/related/view.dart';
 import 'package:PiliPlus/pages/video/reply/controller.dart';
 import 'package:PiliPlus/pages/video/reply/view.dart';
@@ -77,7 +78,19 @@ import 'package:material_ui/material_ui.dart';
 import 'package:screen_brightness_platform_interface/screen_brightness_platform_interface.dart';
 
 class VideoDetailPageV extends StatefulWidget {
-  const VideoDetailPageV({super.key});
+  const VideoDetailPageV({
+    super.key,
+    this.arguments,
+    this.isSplitScreen = false,
+    this.forcePortrait = false,
+    this.onClose,
+  });
+
+  /// 分屏模式下由右侧面板直接传入，避免依赖 Get.arguments 被左侧路由覆盖。
+  final Map<String, dynamic>? arguments;
+  final bool isSplitScreen;
+  final bool forcePortrait;
+  final VoidCallback? onClose;
 
   @override
   State<VideoDetailPageV> createState() => _VideoDetailPageVState();
@@ -85,7 +98,10 @@ class VideoDetailPageV extends StatefulWidget {
 
 class _VideoDetailPageVState extends State<VideoDetailPageV>
     with RouteAware, RouteAwareMixin, WidgetsBindingObserver {
-  final heroTag = Get.arguments['heroTag'];
+  late final Map<String, dynamic> _args = Map<String, dynamic>.from(
+    widget.arguments ?? Get.arguments ?? const {},
+  );
+  late final String heroTag = _args['heroTag'];
 
   late final VideoDetailController videoDetailController;
   late final VideoReplyController _videoReplyController;
@@ -139,10 +155,22 @@ class _VideoDetailPageVState extends State<VideoDetailPageV>
   void initState() {
     super.initState();
 
+    if (widget.isSplitScreen) {
+      // 分屏时视频页不在根路由栈中，避免左侧路由变化触发 didPushNext 暂停播放。
+      routeObserver.unsubscribe(this);
+    }
+
     PlPlayerController.setPlayCallBack(playCallBack);
     PlPlayerController.setPrevPlayCallBack(prevPlayCallBack);
     PlPlayerController.setNextPlayCallBack(nextPlayCallBack);
-    videoDetailController = Get.put(VideoDetailController(), tag: heroTag);
+    videoDetailController = Get.put(
+      VideoDetailController(
+        routeArguments: _args,
+        isSplitScreen: widget.isSplitScreen,
+      ),
+      tag: heroTag,
+      permanent: widget.isSplitScreen,
+    );
 
     if (videoDetailController.removeSafeArea) {
       hideSystemBar();
@@ -156,15 +184,28 @@ class _VideoDetailPageVState extends State<VideoDetailPageV>
           heroTag: heroTag,
         ),
         tag: heroTag,
+        permanent: widget.isSplitScreen,
       );
     }
 
     if (videoDetailController.isFileSource) {
-      localIntroController = Get.put(LocalIntroController(), tag: heroTag);
+      localIntroController = Get.put(
+        LocalIntroController(routeArguments: _args),
+        tag: heroTag,
+        permanent: widget.isSplitScreen,
+      );
     } else if (videoDetailController.isUgc) {
-      ugcIntroController = Get.put(UgcIntroController(), tag: heroTag);
+      ugcIntroController = Get.put(
+        UgcIntroController(routeArguments: _args),
+        tag: heroTag,
+        permanent: widget.isSplitScreen,
+      );
     } else {
-      pgcIntroController = Get.put(PgcIntroController(), tag: heroTag);
+      pgcIntroController = Get.put(
+        PgcIntroController(routeArguments: _args),
+        tag: heroTag,
+        permanent: widget.isSplitScreen,
+      );
     }
 
     videoSourceInit();
@@ -379,6 +420,27 @@ class _VideoDetailPageVState extends State<VideoDetailPageV>
       }
     }
     removeObserverMobile(this);
+
+    if (widget.isSplitScreen) {
+      if (Get.isRegistered<VideoReplyController>(tag: heroTag)) {
+        Get.delete<VideoReplyController>(tag: heroTag, force: true);
+      }
+      if (Get.isRegistered<UgcIntroController>(tag: heroTag)) {
+        Get.delete<UgcIntroController>(tag: heroTag, force: true);
+      }
+      if (Get.isRegistered<RelatedController>(tag: heroTag)) {
+        Get.delete<RelatedController>(tag: heroTag, force: true);
+      }
+      if (Get.isRegistered<PgcIntroController>(tag: heroTag)) {
+        Get.delete<PgcIntroController>(tag: heroTag, force: true);
+      }
+      if (Get.isRegistered<LocalIntroController>(tag: heroTag)) {
+        Get.delete<LocalIntroController>(tag: heroTag, force: true);
+      }
+      if (Get.isRegistered<VideoDetailController>(tag: heroTag)) {
+        Get.delete<VideoDetailController>(tag: heroTag, force: true);
+      }
+    }
 
     super.dispose();
   }
@@ -677,7 +739,7 @@ class _VideoDetailPageVState extends State<VideoDetailPageV>
                           size: 15,
                           color: colorScheme.onSurface,
                         ),
-                        onPressed: Get.back,
+                        onPressed: _handleBack,
                       ),
                     ),
                     SizedBox(
@@ -1123,7 +1185,7 @@ class _VideoDetailPageVState extends State<VideoDetailPageV>
                         ),
                       ],
                     ),
-                    onPressed: Get.back,
+                    onPressed: _handleBack,
                   ),
                 ),
                 SizedBox(
@@ -1223,11 +1285,22 @@ class _VideoDetailPageVState extends State<VideoDetailPageV>
   }) => popScope(
     key: videoDetailController.videoPlayerKey,
     canPop:
+        !widget.isSplitScreen &&
         !isFullScreen &&
         !videoDetailController.plPlayerController.isDesktopPip &&
         (videoDetailController.horizontalScreen || isPortrait),
-    onPopInvokedWithResult:
-        videoDetailController.plPlayerController.onPopInvokedWithResult,
+    onPopInvokedWithResult: (didPop, result) {
+      if (widget.isSplitScreen) {
+        if (!didPop) {
+          widget.onClose?.call();
+        }
+        return;
+      }
+      videoDetailController.plPlayerController.onPopInvokedWithResult(
+        didPop,
+        result,
+      );
+    },
     child: Obx(
       () =>
           !videoDetailController.videoState.value ||
@@ -1274,12 +1347,22 @@ class _VideoDetailPageVState extends State<VideoDetailPageV>
   bool isWindowMode = false;
   late EdgeInsets padding;
 
+  void _handleBack() {
+    if (widget.isSplitScreen) {
+      widget.onClose?.call();
+    } else {
+      Get.back();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     Widget child;
     if (videoDetailController.plPlayerController.isPipMode) {
       child = plPlayer(width: maxWidth, height: maxHeight, isPipMode: true);
     } else if (!videoDetailController.horizontalScreen) {
+      child = childWhenDisabled;
+    } else if (widget.forcePortrait) {
       child = childWhenDisabled;
     } else if (maxWidth / maxHeight >= kScreenRatio) {
       child = childWhenDisabledLandscape;
@@ -1861,8 +1944,10 @@ class _VideoDetailPageVState extends State<VideoDetailPageV>
   void showAiBottomSheet() {
     videoDetailController.childKey.currentState?.showBottomSheet(
       constraints: const BoxConstraints(),
-      (context) =>
-          AiConclusionPanel(item: ugcIntroController.aiConclusionResult!),
+      (context) => AiConclusionPanel(
+        item: ugcIntroController.aiConclusionResult!,
+        heroTag: heroTag,
+      ),
     );
   }
 

@@ -36,6 +36,7 @@ import 'package:PiliPlus/utils/platform_utils.dart';
 import 'package:PiliPlus/utils/storage.dart';
 import 'package:PiliPlus/utils/storage_key.dart';
 import 'package:PiliPlus/utils/storage_pref.dart';
+import 'package:PiliPlus/utils/tablet_split_controller.dart';
 import 'package:PiliPlus/utils/theme_utils.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_smart_dialog/flutter_smart_dialog.dart';
@@ -73,6 +74,18 @@ List<SettingsModel> get styleSettings => [
         fullMode();
       } else {
         portraitUpMode();
+      }
+    },
+  ),
+  SwitchModel(
+    title: '平板分屏',
+    subtitle: '点击视频时在右侧分屏打开，左侧页面可继续操作',
+    leading: const Icon(Icons.splitscreen_outlined),
+    setKey: SettingBoxKey.tabletSplitScreen,
+    defaultVal: false,
+    onChanged: (value) {
+      if (!value) {
+        TabletSplitController.instance.close();
       }
     },
   ),

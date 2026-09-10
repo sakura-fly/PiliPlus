@@ -29,6 +29,7 @@ import 'package:PiliPlus/utils/global_data.dart';
 import 'package:PiliPlus/utils/id_utils.dart';
 import 'package:PiliPlus/utils/platform_utils.dart';
 import 'package:PiliPlus/utils/storage_pref.dart';
+import 'package:PiliPlus/utils/tablet_split_controller.dart';
 import 'package:PiliPlus/utils/url_utils.dart';
 import 'package:PiliPlus/utils/utils.dart';
 import 'package:collection/collection.dart';
@@ -467,7 +468,7 @@ abstract final class PageUtils {
     if (!context.mounted) {
       return null;
     }
-    return Get.key.currentState!.push(
+    return Navigator.of(context).push(
       PublishRoute(
         pageBuilder: (context, animation, secondaryAnimation) {
           final isPortrait = context.isPortrait;
@@ -550,6 +551,11 @@ abstract final class PageUtils {
       'heroTag': Utils.makeHeroTag(cid),
       ...?extraArguments,
     };
+    final splitController = TabletSplitController.instance;
+    if ((splitController.isOpen || Get.currentRoute != '/videoV') &&
+        splitController.open(Map<String, dynamic>.from(arguments))) {
+      return Future<void>.value();
+    }
     return PageUtils.toDupNamed('/videoV', arguments: arguments, off: off);
   }
 

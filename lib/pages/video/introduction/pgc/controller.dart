@@ -34,6 +34,8 @@ import 'package:get/get.dart';
 import 'package:material_ui/material_ui.dart';
 
 class PgcIntroController extends CommonIntroController {
+  PgcIntroController({super.routeArguments});
+
   int? seasonId;
   int? epId;
 
@@ -56,7 +58,7 @@ class PgcIntroController extends CommonIntroController {
 
   @override
   void onInit() {
-    final args = Get.arguments;
+    final args = routeArguments ?? Get.arguments;
     seasonId = args['seasonId'];
     epId = args['epId'];
     isPgc = args['videoType'] == VideoType.pgc;

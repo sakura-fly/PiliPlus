@@ -26,6 +26,10 @@ import 'package:material_ui/material_ui.dart';
 
 abstract class CommonIntroController extends GetxController
     with GetSingleTickerProviderStateMixin, TripleMixin, FavMixin {
+  CommonIntroController({this.routeArguments});
+
+  final Map<String, dynamic>? routeArguments;
+
   late final String heroTag;
   late String bvid;
 
@@ -74,7 +78,7 @@ abstract class CommonIntroController extends GetxController
   @override
   void onInit() {
     super.onInit();
-    final args = Get.arguments;
+    final args = routeArguments ?? Get.arguments;
     heroTag = args['heroTag'];
     bvid = args['bvid'];
     cid = RxInt(args['cid']);

@@ -6,6 +6,7 @@ import 'package:PiliPlus/common/widgets/back_detector.dart';
 import 'package:PiliPlus/common/widgets/custom_toast.dart';
 import 'package:PiliPlus/common/widgets/route_aware_mixin.dart';
 import 'package:PiliPlus/common/widgets/scale_app.dart';
+import 'package:PiliPlus/common/widgets/tablet_split_screen.dart';
 import 'package:PiliPlus/common/widgets/scroll_behavior.dart';
 import 'package:PiliPlus/http/init.dart';
 import 'package:PiliPlus/models/common/theme/theme_color_type.dart';
@@ -246,6 +247,7 @@ class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
   static ColorScheme? _light, _dark;
+  static final _navigatorKey = GlobalKey<NavigatorState>();
 
   static (ThemeData, ThemeData) getAllTheme() {
     final dynamicColor = _light != null && _dark != null && Pref.dynamicColor;
@@ -272,6 +274,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     final (light, dark) = getAllTheme();
     return GetMaterialApp(
+      navigatorKey: _navigatorKey,
       title: Constants.appName,
       theme: light,
       darkTheme: dark,
@@ -328,12 +331,12 @@ class MyApp extends StatelessWidget {
       );
     }
     if (PlatformUtils.isDesktop) {
-      return BackDetector(
+      child = BackDetector(
         onBack: _onBack,
         child: child,
       );
     }
-    return child;
+    return TabletSplitScreenHost(child: child);
   }
 
   /// from [DynamicColorBuilderState.initPlatformState]

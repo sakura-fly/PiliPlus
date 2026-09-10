@@ -80,6 +80,14 @@ import 'package:media_kit/media_kit.dart' hide Subtitle;
 
 class VideoDetailController extends GetxController
     with GetTickerProviderStateMixin, BlockMixin {
+  VideoDetailController({
+    this.routeArguments,
+    this.isSplitScreen = false,
+  });
+
+  final Map<String, dynamic>? routeArguments;
+  final bool isSplitScreen;
+
   /// 路由传参
   late final Map args;
   late String bvid;
@@ -353,7 +361,7 @@ class VideoDetailController extends GetxController
   @override
   void onInit() {
     super.onInit();
-    args = Get.arguments;
+    args = routeArguments ?? Get.arguments;
     videoType = args['videoType'];
     if (videoType == VideoType.pgc) {
       if (!isLoginVideo) {

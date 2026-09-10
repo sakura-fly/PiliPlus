@@ -27,6 +27,9 @@ class VideoReplyController extends ReplyController<MainListReply>
   dynamic get sourceId => IdUtils.av2bv(aid);
 
   @override
+  Map? get routeArguments => videoCtr.args;
+
+  @override
   List<ReplyInfo>? getDataList(MainListReply response) {
     return response.replies;
   }

@@ -8,10 +8,12 @@ import 'package:material_ui/material_ui.dart';
 
 class AiConclusionPanel extends CommonSlidePage {
   final AiConclusionResult item;
+  final String? heroTag;
 
   const AiConclusionPanel({
     super.key,
     required this.item,
+    this.heroTag,
   });
 
   @override
@@ -23,6 +25,7 @@ class AiConclusionPanel extends CommonSlidePage {
     AiConclusionResult res, {
     Key? key,
     bool tap = true,
+    String? heroTag,
   }) {
     final outline = res.outline;
     final hasOutline = outline != null && outline.isNotEmpty;
@@ -102,7 +105,7 @@ class AiConclusionPanel extends CommonSlidePage {
                                             ..onTap = () {
                                               try {
                                                 Get.find<VideoDetailController>(
-                                                  tag: Get.arguments['heroTag'],
+                                                  tag: heroTag,
                                                 ).plPlayerController.seekTo(
                                                   Duration(
                                                     seconds: item.timestamp!,
@@ -180,6 +183,7 @@ class _AiDetailState extends State<AiConclusionPanel>
       theme,
       widget.item,
       key: _key,
+      heroTag: widget.heroTag,
     );
   }
 }

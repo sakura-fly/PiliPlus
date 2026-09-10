@@ -40,6 +40,9 @@ abstract class ReplyController<R> extends CommonListController<R, ReplyInfo> {
       _enableCommAntifraud || _biliSendCommAntifraud;
   dynamic get sourceId;
 
+  /// 当前评论页所属的页面参数，便于分屏等场景传递正确的上下文。
+  Map? get routeArguments => Get.arguments;
+
   @override
   void onInit() {
     super.onInit();
@@ -167,7 +170,7 @@ abstract class ReplyController<R> extends CommonListController<R, ReplyInfo> {
                 },
               );
             },
-            settings: RouteSettings(arguments: Get.arguments),
+            settings: RouteSettings(arguments: routeArguments),
           ),
         )
         .then(
