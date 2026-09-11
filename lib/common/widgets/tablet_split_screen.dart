@@ -119,6 +119,48 @@ class _VideoSplitPaneState extends State<_VideoSplitPane> {
     super.dispose();
   }
 
+  Route<dynamic> _onGenerateRoute(RouteSettings settings) {
+    final routeName = settings.name;
+    if (routeName == null ||
+        routeName == Navigator.defaultRouteName ||
+        routeName == '/videoV') {
+      return MaterialPageRoute<void>(
+        settings: RouteSettings(
+          name: '/videoV',
+          arguments: widget.splitArguments.arguments,
+        ),
+        builder: (context) => VideoDetailPageV(
+          arguments: widget.splitArguments.arguments,
+          isSplitScreen: true,
+          forcePortrait: true,
+        ),
+      );
+    }
+
+    // 分屏内的 Navigator 也要能解析全局命名路由，
+    // 否则点击“设置”等入口时会一直停留在视频页。
+    final match = Get.routeTree.matchRoute(
+      routeName,
+      arguments: settings.arguments,
+    );
+    final page = match.route;
+    if (page == null) {
+      return MaterialPageRoute<void>(
+        settings: settings,
+        builder: (context) => const SizedBox.shrink(),
+      );
+    }
+    Get.parameters = match.parameters;
+    return GetPageRoute<void>(
+      page: page.page,
+      parameter: page.parameters,
+      settings: settings,
+      binding: page.binding,
+      bindings: page.bindings,
+      middlewares: page.middlewares,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -143,14 +185,7 @@ class _VideoSplitPaneState extends State<_VideoSplitPane> {
             child: Navigator(
               key: _navigatorKey,
               observers: [_observer],
-              onGenerateRoute: (settings) => MaterialPageRoute<void>(
-                settings: const RouteSettings(name: '/videoV'),
-                builder: (context) => VideoDetailPageV(
-                  arguments: widget.splitArguments.arguments,
-                  isSplitScreen: true,
-                  forcePortrait: true,
-                ),
-              ),
+              onGenerateRoute: _onGenerateRoute,
             ),
           ),
         ),

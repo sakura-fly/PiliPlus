@@ -30,6 +30,7 @@ import 'package:PiliPlus/utils/request_utils.dart';
 import 'package:PiliPlus/utils/storage.dart';
 import 'package:PiliPlus/utils/storage_key.dart';
 import 'package:PiliPlus/utils/storage_pref.dart';
+import 'package:PiliPlus/utils/tablet_split_controller.dart';
 import 'package:PiliPlus/utils/theme_utils.dart';
 import 'package:PiliPlus/utils/utils.dart';
 import 'package:catcher_2/catcher_2.dart';
@@ -90,8 +91,22 @@ Future<void> _initAppPath() async {
   appSupportDirPath = (await getApplicationSupportDirectory()).path;
 }
 
+/// 分屏打开时优先接管系统返回，避免直接退出 App。
+class _TabletSplitBackObserver with WidgetsBindingObserver {
+  @override
+  Future<bool> didPopRoute() async {
+    final controller = TabletSplitController.instance;
+    if (controller.isOpen) {
+      controller.handleBack();
+      return true;
+    }
+    return false;
+  }
+}
+
 void main() async {
   ScaledWidgetsFlutterBinding.ensureInitialized();
+  WidgetsBinding.instance.addObserver(_TabletSplitBackObserver());
   MediaKit.ensureInitialized();
   await _initAppPath();
   try {
