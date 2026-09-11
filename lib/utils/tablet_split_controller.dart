@@ -1,6 +1,7 @@
 import 'package:PiliPlus/utils/device_utils.dart';
 import 'package:PiliPlus/utils/storage_pref.dart';
 import 'package:flutter/widgets.dart';
+import 'package:get/get.dart';
 
 /// 平板分屏模式下，右侧视频页的参数。
 class VideoSplitArguments {
@@ -24,11 +25,62 @@ class TabletSplitController extends ChangeNotifier {
   VideoSplitArguments? _arguments;
   Map<String, dynamic>? _pendingArguments;
   Size? _screenSize;
+  GlobalKey<NavigatorState>? _splitNavigatorKey;
+
+  // 打开分屏时暂存根路由的 GetX 状态，关闭分屏后恢复。
+  String? _rootCurrent;
+  String? _rootPrevious;
+  dynamic _rootArgs;
+  Map<String, String?>? _rootParameters;
+  bool _hasSavedRouting = false;
 
   VideoSplitArguments? get current => _arguments;
 
   void updateScreenSize(Size size) {
     _screenSize = size;
+  }
+
+  void _saveRouting() {
+    if (_hasSavedRouting) {
+      return;
+    }
+    _rootCurrent = Get.routing.current;
+    _rootPrevious = Get.routing.previous;
+    _rootArgs = Get.routing.args;
+    _rootParameters = Map<String, String?>.from(Get.parameters);
+    _hasSavedRouting = true;
+  }
+
+  void _restoreRouting() {
+    if (!_hasSavedRouting) {
+      return;
+    }
+    Get.routing
+      ..current = _rootCurrent ?? ''
+      ..previous = _rootPrevious ?? ''
+      ..args = _rootArgs;
+    Get.parameters = _rootParameters ?? {};
+    _hasSavedRouting = false;
+  }
+
+  void attachNavigator(GlobalKey<NavigatorState> key) {
+    _splitNavigatorKey = key;
+  }
+
+  void detachNavigator(GlobalKey<NavigatorState> key) {
+    if (identical(_splitNavigatorKey, key)) {
+      _splitNavigatorKey = null;
+    }
+  }
+
+  /// 优先返回右侧分屏内容；右侧没有可返回内容时关闭分屏。
+  void handleBack() {
+    final navigator = _splitNavigatorKey?.currentState;
+    if (navigator != null && navigator.canPop()) {
+      navigator.pop();
+      return;
+    }
+    close();
   }
 
   bool get isOpen => _arguments != null;
@@ -80,6 +132,7 @@ class TabletSplitController extends ChangeNotifier {
       return true;
     }
 
+    _saveRouting();
     _pendingArguments = null;
     _arguments = VideoSplitArguments(arguments);
     notifyListeners();
@@ -89,9 +142,11 @@ class TabletSplitController extends ChangeNotifier {
   void close() {
     _pendingArguments = null;
     if (_arguments == null) {
+      _restoreRouting();
       return;
     }
     _arguments = null;
+    _restoreRouting();
     notifyListeners();
   }
 }

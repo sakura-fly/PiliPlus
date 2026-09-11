@@ -54,11 +54,9 @@ class _TabletSplitScreenHostState extends State<TabletSplitScreenHost> {
       _restoreRootNavigatorKey();
       return widget.child;
     }
-    var rightWidth = screenSize.width * 0.42;
+    var rightWidth = screenSize.width * 0.5;
     if (rightWidth < 320) {
       rightWidth = 320;
-    } else if (rightWidth > 560) {
-      rightWidth = 560;
     }
     if (rightWidth > screenSize.width * 0.6) {
       rightWidth = screenSize.width * 0.6;
@@ -79,7 +77,6 @@ class _TabletSplitScreenHostState extends State<TabletSplitScreenHost> {
         ),
         _VideoSplitPane(
           key: ValueKey(splitArguments.id),
-          rootNavigatorKey: _rootNavigatorKey,
           splitArguments: splitArguments,
           width: rightWidth,
           height: screenSize.height,
@@ -92,13 +89,11 @@ class _TabletSplitScreenHostState extends State<TabletSplitScreenHost> {
 class _VideoSplitPane extends StatefulWidget {
   const _VideoSplitPane({
     super.key,
-    required this.rootNavigatorKey,
     required this.splitArguments,
     required this.width,
     required this.height,
   });
 
-  final GlobalKey<NavigatorState> rootNavigatorKey;
   final VideoSplitArguments splitArguments;
   final double width;
   final double height;
@@ -109,10 +104,20 @@ class _VideoSplitPane extends StatefulWidget {
 
 class _VideoSplitPaneState extends State<_VideoSplitPane> {
   late final _navigatorKey = GlobalKey<NavigatorState>();
-  late final _observer = _SplitNavigatorObserver(
-    splitKey: _navigatorKey,
-    rootKey: widget.rootNavigatorKey,
-  );
+  late final _observer = _SplitNavigatorObserver(splitKey: _navigatorKey);
+
+  @override
+  void initState() {
+    super.initState();
+    TabletSplitController.instance.attachNavigator(_navigatorKey);
+  }
+
+  @override
+  void dispose() {
+    _observer.enabled = false;
+    TabletSplitController.instance.detachNavigator(_navigatorKey);
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -144,7 +149,6 @@ class _VideoSplitPaneState extends State<_VideoSplitPane> {
                   arguments: widget.splitArguments.arguments,
                   isSplitScreen: true,
                   forcePortrait: true,
-                  onClose: TabletSplitController.instance.close,
                 ),
               ),
             ),
@@ -156,46 +160,75 @@ class _VideoSplitPaneState extends State<_VideoSplitPane> {
 }
 
 class _SplitNavigatorObserver extends NavigatorObserver {
-  _SplitNavigatorObserver({required this.splitKey, required this.rootKey});
+  _SplitNavigatorObserver({required this.splitKey});
 
   final GlobalKey<NavigatorState> splitKey;
-  final GlobalKey<NavigatorState> rootKey;
+  final List<Route<dynamic>> _history = [];
+  bool enabled = true;
+
+  static String _routeName(Route<dynamic>? route) => route?.settings.name ?? '';
 
   void _syncNavigatorKey() {
-    final navigator = this.navigator;
-    if (navigator == null) {
+    if (Get.key != splitKey) {
+      Get.addKey(splitKey);
+    }
+  }
+
+  /// 分屏里的页面同样可能使用 Get.arguments / Get.parameters，
+  /// 这里同步 GetX 的路由状态，但保留 Get.routing.route 指向根路由，
+  /// 以便根路由的 PopScope 仍能拦截系统返回。
+  void _syncRouting() {
+    final route = _history.isNotEmpty ? _history.last : null;
+    final previousRoute = _history.length > 1
+        ? _history[_history.length - 2]
+        : null;
+    Get.routing
+      ..current = _routeName(route)
+      ..previous = _routeName(previousRoute)
+      ..args = route?.settings.arguments;
+    Get.parameters = route is GetPageRoute
+        ? Map<String, String?>.from(route.parameter ?? const {})
+        : {};
+  }
+
+  void _sync() {
+    if (!enabled) {
       return;
     }
-    if (navigator.canPop()) {
-      if (Get.key != splitKey) {
-        Get.addKey(splitKey);
-      }
-    } else if (Get.key != rootKey) {
-      Get.addKey(rootKey);
-    }
+    _syncNavigatorKey();
+    _syncRouting();
   }
 
   @override
   void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
     super.didPush(route, previousRoute);
-    _syncNavigatorKey();
+    _history.add(route);
+    _sync();
   }
 
   @override
   void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
     super.didPop(route, previousRoute);
-    _syncNavigatorKey();
+    _history.remove(route);
+    _sync();
   }
 
   @override
   void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) {
     super.didRemove(route, previousRoute);
-    _syncNavigatorKey();
+    _history.remove(route);
+    _sync();
   }
 
   @override
   void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
     super.didReplace(newRoute: newRoute, oldRoute: oldRoute);
-    _syncNavigatorKey();
+    if (oldRoute != null) {
+      _history.remove(oldRoute);
+    }
+    if (newRoute != null) {
+      _history.add(newRoute);
+    }
+    _sync();
   }
 }

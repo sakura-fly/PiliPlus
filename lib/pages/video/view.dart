@@ -68,6 +68,7 @@ import 'package:PiliPlus/utils/page_utils.dart';
 import 'package:PiliPlus/utils/platform_utils.dart';
 import 'package:PiliPlus/utils/storage.dart';
 import 'package:PiliPlus/utils/storage_key.dart';
+import 'package:PiliPlus/utils/tablet_split_controller.dart';
 import 'package:PiliPlus/utils/theme_utils.dart';
 import 'package:extended_nested_scroll_view/extended_nested_scroll_view.dart';
 import 'package:flutter/foundation.dart' show kDebugMode, clampDouble;
@@ -83,14 +84,12 @@ class VideoDetailPageV extends StatefulWidget {
     this.arguments,
     this.isSplitScreen = false,
     this.forcePortrait = false,
-    this.onClose,
   });
 
   /// 分屏模式下由右侧面板直接传入，避免依赖 Get.arguments 被左侧路由覆盖。
   final Map<String, dynamic>? arguments;
   final bool isSplitScreen;
   final bool forcePortrait;
-  final VoidCallback? onClose;
 
   @override
   State<VideoDetailPageV> createState() => _VideoDetailPageVState();
@@ -1292,7 +1291,7 @@ class _VideoDetailPageVState extends State<VideoDetailPageV>
     onPopInvokedWithResult: (didPop, result) {
       if (widget.isSplitScreen) {
         if (!didPop) {
-          widget.onClose?.call();
+          TabletSplitController.instance.handleBack();
         }
         return;
       }
@@ -1349,7 +1348,7 @@ class _VideoDetailPageVState extends State<VideoDetailPageV>
 
   void _handleBack() {
     if (widget.isSplitScreen) {
-      widget.onClose?.call();
+      TabletSplitController.instance.handleBack();
     } else {
       Get.back();
     }
