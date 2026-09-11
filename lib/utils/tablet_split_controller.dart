@@ -23,6 +23,7 @@ class TabletSplitController extends ChangeNotifier {
   static final TabletSplitController instance = TabletSplitController._();
 
   VideoSplitArguments? _arguments;
+  Map<String, dynamic>? _displayedArguments;
   Map<String, dynamic>? _pendingArguments;
   Size? _screenSize;
   GlobalKey<NavigatorState>? _splitNavigatorKey;
@@ -109,14 +110,22 @@ class TabletSplitController extends ChangeNotifier {
       return false;
     }
     final current = _arguments;
-    if (current != null &&
-        current.arguments['heroTag'] == arguments['heroTag']) {
-      return true;
-    }
-
-    // 切换视频时先移除旧分屏，等旧页面完成 dispose 后再创建新页面，
-    // 避免两个视频页在同一帧争用同一个播放器实例。
     if (current != null) {
+      final displayed = _displayedArguments ?? current.arguments;
+      if (displayed['heroTag'] == arguments['heroTag']) {
+        return true;
+      }
+
+      final navigator = _splitNavigatorKey?.currentState;
+      if (navigator != null) {
+        // 已经在分屏中：直接替换右侧 Navigator 里的视频页，
+        // 避免把整个分屏先关掉再重新打开。
+        _displayedArguments = arguments;
+        navigator.pushReplacementNamed('/videoV', arguments: arguments);
+        return true;
+      }
+
+      // 分屏外壳尚未挂载完成时，退回“下一帧重建右侧”的旧逻辑。
       _pendingArguments = arguments;
       _arguments = null;
       notifyListeners();
@@ -126,6 +135,7 @@ class TabletSplitController extends ChangeNotifier {
           return;
         }
         _pendingArguments = null;
+        _displayedArguments = pendingArguments;
         _arguments = VideoSplitArguments(pendingArguments);
         notifyListeners();
       });
@@ -134,6 +144,7 @@ class TabletSplitController extends ChangeNotifier {
 
     _saveRouting();
     _pendingArguments = null;
+    _displayedArguments = arguments;
     _arguments = VideoSplitArguments(arguments);
     notifyListeners();
     return true;
@@ -141,6 +152,7 @@ class TabletSplitController extends ChangeNotifier {
 
   void close() {
     _pendingArguments = null;
+    _displayedArguments = null;
     if (_arguments == null) {
       _restoreRouting();
       return;

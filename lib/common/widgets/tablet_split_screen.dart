@@ -124,13 +124,17 @@ class _VideoSplitPaneState extends State<_VideoSplitPane> {
     if (routeName == null ||
         routeName == Navigator.defaultRouteName ||
         routeName == '/videoV') {
+      final rawArguments = settings.arguments;
+      final arguments = rawArguments is Map
+          ? Map<String, dynamic>.from(rawArguments)
+          : widget.splitArguments.arguments;
       return MaterialPageRoute<void>(
         settings: RouteSettings(
           name: '/videoV',
-          arguments: widget.splitArguments.arguments,
+          arguments: arguments,
         ),
         builder: (context) => VideoDetailPageV(
-          arguments: widget.splitArguments.arguments,
+          arguments: arguments,
           isSplitScreen: true,
           forcePortrait: true,
         ),
