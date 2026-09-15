@@ -175,6 +175,17 @@ class _VideoDetailPageVState extends State<VideoDetailPageV>
     if (widget.isSplitScreen) {
       _fullScreenSub = videoDetailController.plPlayerController.isFullScreen
           .listen(TabletSplitController.instance.setRightFullScreen);
+      TabletSplitController.instance.registerFullScreenBackHandler(this, () {
+        final player = videoDetailController.plPlayerController;
+        if (!player.isFullScreen.value) {
+          return false;
+        }
+        player.triggerFullScreen(status: false);
+        if (player.controlsLock.value) {
+          player.onLockControl(false);
+        }
+        return true;
+      });
     }
 
     if (videoDetailController.removeSafeArea) {
@@ -428,7 +439,9 @@ class _VideoDetailPageVState extends State<VideoDetailPageV>
 
     _fullScreenSub?.cancel();
     if (widget.isSplitScreen) {
-      TabletSplitController.instance.setRightFullScreen(false);
+      TabletSplitController.instance
+        ..unregisterFullScreenBackHandler(this)
+        ..setRightFullScreen(false);
     }
 
     if (widget.isSplitScreen) {

@@ -298,6 +298,20 @@ class _SplitNavigatorObserver extends NavigatorObserver {
     }
     _syncNavigatorKey();
     _syncRouting();
+    final routeStack = <SplitRouteInfo>[];
+    for (final route in _history) {
+      if (route is! PageRoute) {
+        continue;
+      }
+      final name = _routeName(route);
+      routeStack.add(
+        SplitRouteInfo(
+          name: name.isEmpty ? null : name,
+          arguments: route.settings.arguments,
+        ),
+      );
+    }
+    TabletSplitController.instance.updateRightRouteStack(routeStack);
   }
 
   @override

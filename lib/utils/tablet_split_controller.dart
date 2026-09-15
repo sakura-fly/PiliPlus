@@ -18,6 +18,14 @@ class VideoSplitArguments {
   Map<String, dynamic> get arguments => videoStack.last;
 }
 
+/// 分屏右侧的一层页面信息，用于横屏切竖屏时保留完整导航栈。
+class SplitRouteInfo {
+  const SplitRouteInfo({this.name, this.arguments});
+
+  final String? name;
+  final Object? arguments;
+}
+
 /// 管理平板分屏状态。
 ///
 /// 打开后，[TabletSplitScreenHost] 会把当前 App 压缩到左侧，并在右侧
@@ -34,6 +42,11 @@ class TabletSplitController extends ChangeNotifier {
   Size? _screenSize;
   GlobalKey<NavigatorState>? _splitNavigatorKey;
   final List<Route<dynamic>> _rootRoutes = [];
+  List<SplitRouteInfo> _rightRouteStack = const [];
+  NavigatorState? _rootNavigator;
+  Route<dynamic>? _rootTopWhenOpened;
+  Object? _fullScreenBackOwner;
+  bool Function()? _fullScreenBackHandler;
 
   // 打开分屏时暂存根路由的 GetX 状态，关闭分屏后恢复。
   String? _rootCurrent;
@@ -131,13 +144,41 @@ class TabletSplitController extends ChangeNotifier {
     }
   }
 
-  /// 优先返回右侧分屏内容；右侧没有可返回内容时回退虚拟视频栈。
+  void registerFullScreenBackHandler(
+    Object owner,
+    bool Function()? handler,
+  ) {
+    _fullScreenBackOwner = owner;
+    _fullScreenBackHandler = handler;
+  }
+
+  void unregisterFullScreenBackHandler(Object owner) {
+    if (identical(_fullScreenBackOwner, owner)) {
+      _fullScreenBackOwner = null;
+      _fullScreenBackHandler = null;
+    }
+  }
+
+  void updateRightRouteStack(List<SplitRouteInfo> stack) {
+    _rightRouteStack = stack;
+  }
+
+  /// 优先处理全屏、右侧分屏、右侧 Navigator 和根导航中新压入的页面，
+  /// 最后才关闭分屏，避免直接退出。
   void handleBack() {
+    if (_rightFullScreen) {
+      final handler = _fullScreenBackHandler;
+      if (handler != null && handler()) {
+        return;
+      }
+    }
+
     final navigator = _splitNavigatorKey?.currentState;
     if (navigator != null && navigator.canPop()) {
       navigator.pop();
       return;
     }
+
     final current = _arguments;
     if (navigator != null && current != null && current.videoStack.length > 1) {
       current.videoStack.removeLast();
@@ -147,6 +188,19 @@ class TabletSplitController extends ChangeNotifier {
       navigator.pushReplacementNamed('/videoV', arguments: previous);
       return;
     }
+
+    // 有些右侧页面在 GetX 路由状态切换时可能被压到根导航上，
+    // 这里一并按层返回，直到回到打开分屏时的根页面。
+    final rootNavigator = _rootNavigator;
+    final rootTop = _rootRoutes.isNotEmpty ? _rootRoutes.last : null;
+    if (rootNavigator != null &&
+        rootNavigator.canPop() &&
+        rootTop != null &&
+        rootTop != _rootTopWhenOpened) {
+      rootNavigator.pop();
+      return;
+    }
+
     close();
   }
 
@@ -224,6 +278,8 @@ class TabletSplitController extends ChangeNotifier {
     }
 
     _saveRouting();
+    _rootNavigator = Get.key.currentState;
+    _rootTopWhenOpened = _rootRoutes.isNotEmpty ? _rootRoutes.last : null;
     _pendingArguments = null;
     _rightFullScreen = false;
     _displayedArguments = arguments;
@@ -232,15 +288,30 @@ class TabletSplitController extends ChangeNotifier {
     return true;
   }
 
-  /// 横屏分屏切回竖屏时：关闭分屏，并把右侧视频栈重新压入根导航栈。
+  /// 横屏分屏切回竖屏时：关闭分屏，并把右侧完整导航栈重新压入根导航栈。
   void collapseToPortrait() {
     final current = _arguments;
     if (current == null || current.videoStack.isEmpty) {
       return;
     }
+    final routeStack = List<SplitRouteInfo>.from(_rightRouteStack);
     final videoStack = List<Map<String, dynamic>>.from(current.videoStack);
     close();
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (routeStack.isNotEmpty) {
+        for (final route in routeStack) {
+          final name = route.name;
+          if (name == null || name.isEmpty) {
+            continue;
+          }
+          Get.toNamed(
+            name,
+            arguments: route.arguments,
+            preventDuplicates: false,
+          );
+        }
+        return;
+      }
       for (final args in videoStack) {
         Get.toNamed(
           '/videoV',
@@ -277,6 +348,11 @@ class TabletSplitController extends ChangeNotifier {
     _pendingArguments = null;
     _rightFullScreen = false;
     _displayedArguments = null;
+    _rightRouteStack = const [];
+    _rootNavigator = null;
+    _rootTopWhenOpened = null;
+    _fullScreenBackOwner = null;
+    _fullScreenBackHandler = null;
     if (_arguments == null) {
       _restoreRouting();
       return;
