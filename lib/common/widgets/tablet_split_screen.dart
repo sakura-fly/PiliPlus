@@ -16,6 +16,8 @@ class TabletSplitScreenHost extends StatefulWidget {
 class _TabletSplitScreenHostState extends State<TabletSplitScreenHost> {
   final _controller = TabletSplitController.instance;
   late final GlobalKey<NavigatorState> _rootNavigatorKey = Get.key;
+  Orientation? _lastOrientation;
+  bool _orientationTransitionScheduled = false;
 
   @override
   void initState() {
@@ -43,43 +45,99 @@ class _TabletSplitScreenHostState extends State<TabletSplitScreenHost> {
     }
   }
 
+  void _handleOrientationTransition(Orientation from, Orientation to) {
+    if (from == Orientation.landscape && to == Orientation.portrait) {
+      if (_controller.isOpen) {
+        _controller.collapseToPortrait();
+      }
+      return;
+    }
+    if (from == Orientation.portrait && to == Orientation.landscape) {
+      if (_controller.isOpen || Get.currentRoute != '/videoV') {
+        return;
+      }
+      final videoStack = List<Map<String, dynamic>>.from(
+        _controller.rootVideoStack,
+      );
+      if (videoStack.isNotEmpty) {
+        _controller.convertRootVideosToSplit(videoStack);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final mediaQuery = MediaQuery.of(context);
     final screenSize = mediaQuery.size;
     _controller.updateScreenSize(screenSize);
 
+    final orientation = screenSize.width > screenSize.height
+        ? Orientation.landscape
+        : Orientation.portrait;
+    final lastOrientation = _lastOrientation;
+    _lastOrientation = orientation;
+    if (lastOrientation != null &&
+        lastOrientation != orientation &&
+        !_orientationTransitionScheduled) {
+      _orientationTransitionScheduled = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _orientationTransitionScheduled = false;
+        if (!mounted) {
+          return;
+        }
+        _handleOrientationTransition(lastOrientation, orientation);
+      });
+    }
+
     final splitArguments = _controller.current;
     if (splitArguments == null) {
       _restoreRootNavigatorKey();
       return widget.child;
     }
-    var rightWidth = screenSize.width * 0.5;
-    if (rightWidth < 320) {
-      rightWidth = 320;
-    }
-    if (rightWidth > screenSize.width * 0.6) {
-      rightWidth = screenSize.width * 0.6;
-    }
-    final leftWidth = screenSize.width - rightWidth;
+    final isRightFullScreen = _controller.rightFullScreen;
 
-    return Row(
+    // 左右 50/50；左侧用小于 600dp 的逻辑宽度，保证手机竖屏布局。
+    var leftWidth = screenSize.width * 0.5;
+    if (leftWidth < 280) {
+      leftWidth = 280;
+    }
+    if (leftWidth > screenSize.width - 320) {
+      leftWidth = screenSize.width - 320;
+    }
+    if (leftWidth < 0) {
+      leftWidth = 0;
+    }
+    final leftLogicalWidth = leftWidth > 599 ? 599.0 : leftWidth;
+    final rightWidth = isRightFullScreen
+        ? screenSize.width
+        : screenSize.width - leftWidth;
+
+    return Stack(
+      fit: StackFit.expand,
       children: [
-        SizedBox(
+        Positioned(
+          left: 0,
+          top: 0,
+          bottom: 0,
           width: leftWidth,
-          height: screenSize.height,
           child: MediaQuery(
             data: mediaQuery.copyWith(
-              size: Size(leftWidth, screenSize.height),
+              size: Size(leftLogicalWidth, screenSize.height),
             ),
             child: widget.child,
           ),
         ),
-        _VideoSplitPane(
-          key: ValueKey(splitArguments.id),
-          splitArguments: splitArguments,
+        Positioned(
+          left: isRightFullScreen ? 0 : leftWidth,
+          top: 0,
+          bottom: 0,
           width: rightWidth,
-          height: screenSize.height,
+          child: _VideoSplitPane(
+            key: ValueKey(splitArguments.id),
+            splitArguments: splitArguments,
+            width: rightWidth,
+            height: screenSize.height,
+          ),
         ),
       ],
     );
@@ -119,6 +177,20 @@ class _VideoSplitPaneState extends State<_VideoSplitPane> {
     super.dispose();
   }
 
+  Route<dynamic> _buildVideoRoute(Map<String, dynamic> arguments) {
+    return MaterialPageRoute<void>(
+      settings: RouteSettings(
+        name: '/videoV',
+        arguments: arguments,
+      ),
+      builder: (context) => VideoDetailPageV(
+        arguments: arguments,
+        isSplitScreen: true,
+        forcePortrait: true,
+      ),
+    );
+  }
+
   Route<dynamic> _onGenerateRoute(RouteSettings settings) {
     final routeName = settings.name;
     if (routeName == null ||
@@ -128,17 +200,7 @@ class _VideoSplitPaneState extends State<_VideoSplitPane> {
       final arguments = rawArguments is Map
           ? Map<String, dynamic>.from(rawArguments)
           : widget.splitArguments.arguments;
-      return MaterialPageRoute<void>(
-        settings: RouteSettings(
-          name: '/videoV',
-          arguments: arguments,
-        ),
-        builder: (context) => VideoDetailPageV(
-          arguments: arguments,
-          isSplitScreen: true,
-          forcePortrait: true,
-        ),
-      );
+      return _buildVideoRoute(arguments);
     }
 
     // 分屏内的 Navigator 也要能解析全局命名路由，

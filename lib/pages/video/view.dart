@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io' show Platform;
 import 'dart:math';
 
@@ -130,6 +131,7 @@ class _VideoDetailPageVState extends State<VideoDetailPageV>
       videoDetailController.plPlayerController.pipNoDanmaku;
 
   bool isShowing = true;
+  StreamSubscription<bool>? _fullScreenSub;
 
   bool get isFullScreen =>
       videoDetailController.plPlayerController.isFullScreen.value;
@@ -170,6 +172,10 @@ class _VideoDetailPageVState extends State<VideoDetailPageV>
       tag: heroTag,
       permanent: widget.isSplitScreen,
     );
+    if (widget.isSplitScreen) {
+      _fullScreenSub = videoDetailController.plPlayerController.isFullScreen
+          .listen(TabletSplitController.instance.setRightFullScreen);
+    }
 
     if (videoDetailController.removeSafeArea) {
       hideSystemBar();
@@ -419,6 +425,11 @@ class _VideoDetailPageVState extends State<VideoDetailPageV>
       }
     }
     removeObserverMobile(this);
+
+    _fullScreenSub?.cancel();
+    if (widget.isSplitScreen) {
+      TabletSplitController.instance.setRightFullScreen(false);
+    }
 
     if (widget.isSplitScreen) {
       if (Get.isRegistered<VideoReplyController>(tag: heroTag)) {
@@ -1361,7 +1372,7 @@ class _VideoDetailPageVState extends State<VideoDetailPageV>
       child = plPlayer(width: maxWidth, height: maxHeight, isPipMode: true);
     } else if (!videoDetailController.horizontalScreen) {
       child = childWhenDisabled;
-    } else if (widget.forcePortrait) {
+    } else if (widget.forcePortrait && !isFullScreen) {
       child = childWhenDisabled;
     } else if (maxWidth / maxHeight >= kScreenRatio) {
       child = childWhenDisabledLandscape;
