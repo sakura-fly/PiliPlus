@@ -187,6 +187,14 @@ class TabletSplitController extends ChangeNotifier {
     _rightRouteStack = stack;
   }
 
+  void onRightVideoPopped() {
+    final current = _arguments;
+    if (current != null && current.videoStack.length > 1) {
+      current.videoStack.removeLast();
+      _displayedArguments = current.videoStack.last;
+    }
+  }
+
   /// 优先处理全屏、右侧分屏、右侧 Navigator 和根导航中新压入的页面，
   /// 最后才关闭分屏，避免直接退出。
   void handleBack() {

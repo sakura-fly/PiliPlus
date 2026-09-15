@@ -356,6 +356,9 @@ class _SplitNavigatorObserver extends NavigatorObserver {
   void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
     super.didPop(route, previousRoute);
     _history.remove(route);
+    if (route is PageRoute && _routeName(route) == '/videoV') {
+      TabletSplitController.instance.onRightVideoPopped();
+    }
     _sync();
   }
 
