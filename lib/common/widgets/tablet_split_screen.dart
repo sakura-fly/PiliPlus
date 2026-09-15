@@ -16,8 +16,6 @@ class TabletSplitScreenHost extends StatefulWidget {
 class _TabletSplitScreenHostState extends State<TabletSplitScreenHost> {
   final _controller = TabletSplitController.instance;
   late final GlobalKey<NavigatorState> _rootNavigatorKey = Get.key;
-  Orientation? _lastOrientation;
-  bool _orientationTransitionScheduled = false;
 
   @override
   void initState() {
@@ -45,48 +43,11 @@ class _TabletSplitScreenHostState extends State<TabletSplitScreenHost> {
     }
   }
 
-  void _handleOrientationTransition(Orientation from, Orientation to) {
-    if (from == Orientation.landscape && to == Orientation.portrait) {
-      // 竖屏时右侧分屏改为全屏覆盖，保持右侧 Navigator 原样，
-      // 不销毁、不重建，返回时可以直接复用原有页面栈。
-      return;
-    }
-    if (from == Orientation.portrait && to == Orientation.landscape) {
-      if (_controller.isOpen || Get.currentRoute != '/videoV') {
-        return;
-      }
-      final videoStack = List<Map<String, dynamic>>.from(
-        _controller.rootVideoStack,
-      );
-      if (videoStack.isNotEmpty) {
-        _controller.convertRootVideosToSplit(videoStack);
-      }
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final mediaQuery = MediaQuery.of(context);
     final screenSize = mediaQuery.size;
     _controller.updateScreenSize(screenSize);
-
-    final orientation = screenSize.width > screenSize.height
-        ? Orientation.landscape
-        : Orientation.portrait;
-    final lastOrientation = _lastOrientation;
-    _lastOrientation = orientation;
-    if (lastOrientation != null &&
-        lastOrientation != orientation &&
-        !_orientationTransitionScheduled) {
-      _orientationTransitionScheduled = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _orientationTransitionScheduled = false;
-        if (!mounted) {
-          return;
-        }
-        _handleOrientationTransition(lastOrientation, orientation);
-      });
-    }
 
     final splitArguments = _controller.current;
     if (splitArguments == null) {
