@@ -47,6 +47,8 @@ class TabletSplitController extends ChangeNotifier {
   Route<dynamic>? _rootTopWhenOpened;
   Object? _fullScreenBackOwner;
   bool Function()? _fullScreenBackHandler;
+  bool _replaceRightStackOnNextPush = false;
+  bool _lastInteractionFromRight = false;
 
   // 打开分屏时暂存根路由的 GetX 状态，关闭分屏后恢复。
   String? _rootCurrent;
@@ -157,6 +159,28 @@ class TabletSplitController extends ChangeNotifier {
       _fullScreenBackOwner = null;
       _fullScreenBackHandler = null;
     }
+  }
+
+  /// 左侧触发的导航需要清空右侧分屏栈。
+  void markInteractionFromLeft() {
+    _lastInteractionFromRight = false;
+    if (isOpen) {
+      _replaceRightStackOnNextPush = true;
+    }
+  }
+
+  /// 右侧触发的导航保留右侧分屏栈，向上堆叠。
+  void markInteractionFromRight() {
+    _lastInteractionFromRight = true;
+    _replaceRightStackOnNextPush = false;
+  }
+
+  bool get isInteractionFromRight => _lastInteractionFromRight;
+
+  bool consumeReplaceRightStack() {
+    final replace = _replaceRightStackOnNextPush;
+    _replaceRightStackOnNextPush = false;
+    return replace;
   }
 
   void updateRightRouteStack(List<SplitRouteInfo> stack) {
@@ -288,6 +312,30 @@ class TabletSplitController extends ChangeNotifier {
     return true;
   }
 
+  /// 从右侧打开视频：在当前右侧视频栈上继续向上堆叠。
+  bool openFromRight(Map<String, dynamic> arguments) {
+    if (!_canSplit) {
+      return false;
+    }
+    final current = _arguments;
+    if (current == null) {
+      return open(arguments);
+    }
+    final displayed = _displayedArguments ?? current.arguments;
+    if (displayed['heroTag'] == arguments['heroTag']) {
+      return true;
+    }
+    final navigator = _splitNavigatorKey?.currentState;
+    setRightFullScreen(false);
+    current.videoStack.add(arguments);
+    _displayedArguments = arguments;
+    if (navigator != null) {
+      navigator.pushNamed('/videoV', arguments: arguments);
+      return true;
+    }
+    return open(arguments, videoStack: List.of(current.videoStack));
+  }
+
   /// 横屏分屏切回竖屏时：关闭分屏，并把右侧完整导航栈重新压入根导航栈。
   void collapseToPortrait() {
     final current = _arguments;
@@ -353,6 +401,8 @@ class TabletSplitController extends ChangeNotifier {
     _rootTopWhenOpened = null;
     _fullScreenBackOwner = null;
     _fullScreenBackHandler = null;
+    _replaceRightStackOnNextPush = false;
+    _lastInteractionFromRight = false;
     if (_arguments == null) {
       _restoreRouting();
       return;

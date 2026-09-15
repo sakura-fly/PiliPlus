@@ -120,11 +120,15 @@ class _TabletSplitScreenHostState extends State<TabletSplitScreenHost> {
           top: 0,
           bottom: 0,
           width: leftWidth,
-          child: MediaQuery(
-            data: mediaQuery.copyWith(
-              size: Size(leftLogicalWidth, screenSize.height),
+          child: Listener(
+            behavior: HitTestBehavior.translucent,
+            onPointerDown: (_) => _controller.markInteractionFromLeft(),
+            child: MediaQuery(
+              data: mediaQuery.copyWith(
+                size: Size(leftLogicalWidth, screenSize.height),
+              ),
+              child: widget.child,
             ),
-            child: widget.child,
           ),
         ),
         Positioned(
@@ -132,11 +136,15 @@ class _TabletSplitScreenHostState extends State<TabletSplitScreenHost> {
           top: 0,
           bottom: 0,
           width: rightWidth,
-          child: _VideoSplitPane(
-            key: ValueKey(splitArguments.id),
-            splitArguments: splitArguments,
-            width: rightWidth,
-            height: screenSize.height,
+          child: Listener(
+            behavior: HitTestBehavior.translucent,
+            onPointerDown: (_) => _controller.markInteractionFromRight(),
+            child: _VideoSplitPane(
+              key: ValueKey(splitArguments.id),
+              splitArguments: splitArguments,
+              width: rightWidth,
+              height: screenSize.height,
+            ),
           ),
         ),
       ],
@@ -318,6 +326,29 @@ class _SplitNavigatorObserver extends NavigatorObserver {
   void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
     super.didPush(route, previousRoute);
     _history.add(route);
+
+    // 左侧入口打开的新页面：把右侧已有点击栈整体清掉，
+    // 让新页面成为分屏里的最底层。
+    if (route is PageRoute &&
+        TabletSplitController.instance.consumeReplaceRightStack()) {
+      final navigator = this.navigator;
+      if (navigator != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!navigator.mounted) {
+            return;
+          }
+          try {
+            while (!route.isFirst) {
+              navigator.removeRouteBelow(route);
+            }
+          } catch (_) {
+            // 某些平台/Flutter 版本不支持 removeRouteBelow 时忽略，
+            // 后续返回逻辑仍会逐层处理。
+          }
+        });
+      }
+    }
+
     _sync();
   }
 

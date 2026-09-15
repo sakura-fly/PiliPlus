@@ -552,9 +552,15 @@ abstract final class PageUtils {
       ...?extraArguments,
     };
     final splitController = TabletSplitController.instance;
-    if ((splitController.isOpen || Get.currentRoute != '/videoV') &&
-        splitController.open(Map<String, dynamic>.from(arguments))) {
-      return Future<void>.value();
+    if (splitController.isOpen || Get.currentRoute != '/videoV') {
+      final splitArguments = Map<String, dynamic>.from(arguments);
+      final opened =
+          splitController.isOpen && splitController.isInteractionFromRight
+          ? splitController.openFromRight(splitArguments)
+          : splitController.open(splitArguments);
+      if (opened) {
+        return Future<void>.value();
+      }
     }
     return PageUtils.toDupNamed('/videoV', arguments: arguments, off: off);
   }
