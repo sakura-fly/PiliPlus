@@ -47,9 +47,8 @@ class _TabletSplitScreenHostState extends State<TabletSplitScreenHost> {
 
   void _handleOrientationTransition(Orientation from, Orientation to) {
     if (from == Orientation.landscape && to == Orientation.portrait) {
-      if (_controller.isOpen) {
-        _controller.collapseToPortrait();
-      }
+      // 竖屏时右侧分屏改为全屏覆盖，保持右侧 Navigator 原样，
+      // 不销毁、不重建，返回时可以直接复用原有页面栈。
       return;
     }
     if (from == Orientation.portrait && to == Orientation.landscape) {
@@ -95,6 +94,7 @@ class _TabletSplitScreenHostState extends State<TabletSplitScreenHost> {
       return widget.child;
     }
     final isRightFullScreen = _controller.rightFullScreen;
+    final isPortrait = screenSize.width <= screenSize.height;
 
     // 左右 50/50；左侧用小于 600dp 的逻辑宽度，保证手机竖屏布局。
     var leftWidth = screenSize.width * 0.5;
@@ -108,7 +108,8 @@ class _TabletSplitScreenHostState extends State<TabletSplitScreenHost> {
       leftWidth = 0;
     }
     final leftLogicalWidth = leftWidth > 599 ? 599.0 : leftWidth;
-    final rightWidth = isRightFullScreen
+    final rightFull = isRightFullScreen || isPortrait;
+    final rightWidth = rightFull
         ? screenSize.width
         : screenSize.width - leftWidth;
 
@@ -132,12 +133,12 @@ class _TabletSplitScreenHostState extends State<TabletSplitScreenHost> {
           ),
         ),
         Positioned(
-          left: isRightFullScreen ? 0 : leftWidth,
+          left: rightFull ? 0 : leftWidth,
           top: 0,
           bottom: 0,
           width: rightWidth,
           child: Listener(
-            behavior: HitTestBehavior.translucent,
+            behavior: HitTestBehavior.opaque,
             onPointerDown: (_) => _controller.markInteractionFromRight(),
             child: _VideoSplitPane(
               key: ValueKey(splitArguments.id),
