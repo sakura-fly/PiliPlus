@@ -212,7 +212,13 @@ class TabletSplitController extends ChangeNotifier {
     }
 
     final current = _arguments;
-    if (navigator != null && current != null && current.videoStack.length > 1) {
+    final rightTopName = _rightRouteStack.isNotEmpty
+        ? _rightRouteStack.last.name
+        : null;
+    if (navigator != null &&
+        current != null &&
+        rightTopName == '/videoV' &&
+        current.videoStack.length > 1) {
       current.videoStack.removeLast();
       final previous = current.videoStack.last;
       _displayedArguments = previous;
