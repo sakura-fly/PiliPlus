@@ -12,10 +12,18 @@
 # 参数：
 #   --repo owner/repo   目标 Gitee 仓库，如 sakura-fly/PiliPlus
 #   --tag  vX.Y.Z       版本号 / 标签（空则跳过）
+#   --name NAME         Release 标题，默认与 --tag 相同
+#   --body TEXT         Release 说明（简短文本）
+#   --body-file FILE    Release 说明读取自文件（推荐，支持多行 Markdown）
 #   --files "glob"      待上传文件通配符，可重复传入
+#   --commitish REF     创建 Release 时的 target_commitish（默认取仓库默认分支）
+#   --keep N            只保留最近 N 个 Release（默认不清理）
 #
 # 行为：按 tag 查找 Gitee Release，不存在则自动创建；上传前对比已有附件，
 #       同名文件自动跳过（幂等，可重复运行）。
+#       传入 --name / --body / --body-file 时，若 Release 已存在则 PATCH 更新
+#       标题与说明 —— 用于把 GitHub Release 的详情同步到 Gitee；
+#       不传这些参数则维持原有行为（标题=tag，说明=PiliPlus <tag>）。
 # =============================================================================
 set -euo pipefail
 
@@ -24,12 +32,19 @@ REPO=""
 TAG=""
 COMMITISH=""
 KEEP=""
+NAME_OPT=""
+BODY_OPT=""
+BODY_FILE=""
+SYNC_META=0
 FILES=()
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --repo)      REPO="${2:-}"; shift 2 ;;
     --tag)       TAG="${2:-}"; shift 2 ;;
+    --name)      NAME_OPT="${2:-}"; SYNC_META=1; shift 2 ;;
+    --body)      BODY_OPT="${2:-}"; SYNC_META=1; shift 2 ;;
+    --body-file) BODY_FILE="${2:-}"; SYNC_META=1; shift 2 ;;
     --commitish) COMMITISH="${2:-}"; shift 2 ;;
     --files)     FILES+=("${2:-}"); shift 2 ;;
     --keep)      KEEP="${2:-}"; shift 2 ;;
@@ -52,13 +67,53 @@ fi
 
 echo "==> Gitee Release 上传: $REPO @ $TAG"
 
+# ---- 0. 组装 Release 标题与说明 ----
+# JSON 字符串转义：只在 curl 之外不引入 jq / python 依赖
+json_escape() {
+  local s="${1-}"
+  s="${s//\\/\\\\}"    # 反斜杠
+  s="${s//\"/\\\"}"    # 双引号
+  s="${s//$'\n'/\\n}"  # 换行
+  s="${s//$'\r'/\\r}"  # 回车
+  s="${s//$'\t'/\\t}"  # 制表符
+  s="${s//$'\f'/\\f}"  # 换页
+  s="${s//$'\b'/\\b}"  # 退格
+  printf '%s' "$s"
+}
+
+RELEASE_NAME="${NAME_OPT:-$TAG}"
+if [[ -n "$BODY_FILE" ]]; then
+  if [[ -f "$BODY_FILE" ]]; then
+    RELEASE_BODY="$(cat "$BODY_FILE")"
+    echo "==> 读取 Release 说明: $BODY_FILE"
+  else
+    echo "警告：--body-file 指定的文件不存在: $BODY_FILE（回退为默认说明）" >&2
+    RELEASE_BODY=""
+  fi
+elif [[ -n "$BODY_OPT" ]]; then
+  RELEASE_BODY="$BODY_OPT"
+else
+  RELEASE_BODY=""
+fi
+if [[ -z "$RELEASE_BODY" ]]; then
+  RELEASE_BODY="PiliPlus $TAG"
+fi
+
+TOKEN_JSON="$(json_escape "$GITEE_TOKEN")"
+TAG_JSON="$(json_escape "$TAG")"
+NAME_JSON="$(json_escape "$RELEASE_NAME")"
+BODY_JSON="$(json_escape "$RELEASE_BODY")"
+COMMITISH_JSON=""
+
 # ---- 1. 获取或创建 Release ----
 RELEASE_ID=""
+RELEASE_EXISTED=0
 GET_JSON="$(curl -fsSL -G "$API/repos/$REPO/releases/tags/$TAG" \
   --data-urlencode "access_token=$GITEE_TOKEN" 2>/dev/null || true)"
 if [[ -n "$GET_JSON" ]]; then
   RELEASE_ID="$(printf '%s' "$GET_JSON" \
     | grep -o '"id"[[:space:]]*:[[:space:]]*[0-9]*' | head -1 | grep -o '[0-9]*' || true)"
+  [[ -n "$RELEASE_ID" ]] && RELEASE_EXISTED=1
 fi
 
 if [[ -z "$RELEASE_ID" ]]; then
@@ -77,11 +132,12 @@ if [[ -z "$RELEASE_ID" ]]; then
     echo "错误：无法确定 target_commitish（请用 --commitish 显式指定 Gitee 仓库的分支名）" >&2
     exit 1
   fi
-  BODY="{\"access_token\":\"$GITEE_TOKEN\",\"tag_name\":\"$TAG\",\"name\":\"$TAG\",\"body\":\"PiliPlus $TAG\",\"target_commitish\":\"$COMMITISH\",\"prerelease\":false}"
+  COMMITISH_JSON="$(json_escape "$COMMITISH")"
+  PAYLOAD="{\"access_token\":\"$TOKEN_JSON\",\"tag_name\":\"$TAG_JSON\",\"name\":\"$NAME_JSON\",\"body\":\"$BODY_JSON\",\"target_commitish\":\"$COMMITISH_JSON\",\"prerelease\":false}"
   CREATE_TMP="$(mktemp)"
   CREATE_CODE="$(curl -sS -o "$CREATE_TMP" -w '%{http_code}' -X POST "$API/repos/$REPO/releases" \
     -H 'Content-Type: application/json;charset=UTF-8' \
-    --data "$BODY" || true)"
+    --data "$PAYLOAD" || true)"
   CREATE_JSON="$(cat "$CREATE_TMP" 2>/dev/null || true)"
   rm -f "$CREATE_TMP"
   if [[ "$CREATE_CODE" != 2* ]]; then
@@ -98,6 +154,46 @@ if [[ -z "$RELEASE_ID" ]]; then
   fi
 fi
 echo "==> Release ID: $RELEASE_ID"
+
+# ---- 1.5 同步标题/说明（仅当传入 --name / --body / --body-file）----
+# 用途：GitHub 流水线打包后调用，把 GitHub Release 的说明（release_notes.md）搬到 Gitee。
+# 新建的 Release 在创建请求里已带上标题/说明，只有「已存在」的才需要 PATCH 覆盖
+# （典型场景：Gitee Go 流水线先建了 Release，或重跑工作流补同步说明）
+if [[ "$SYNC_META" -eq 1 && "$RELEASE_EXISTED" -eq 1 ]]; then
+  META_PAYLOAD="{\"access_token\":\"$TOKEN_JSON\",\"name\":\"$NAME_JSON\",\"body\":\"$BODY_JSON\"}"
+  PATCH_OK=0
+  for MODE in json form; do
+    PATCH_TMP="$(mktemp)"
+    if [[ "$MODE" == "json" ]]; then
+      PATCH_CODE="$(curl -sS -o "$PATCH_TMP" -w '%{http_code}' -X PATCH \
+        "$API/repos/$REPO/releases/$RELEASE_ID" \
+        -H 'Content-Type: application/json;charset=UTF-8' \
+        --data "$META_PAYLOAD" || true)"
+    else
+      # 回退：个别 Gitee 网关对 PATCH + JSON 支持不佳，改用表单编码重试
+      PATCH_CODE="$(curl -sS -o "$PATCH_TMP" -w '%{http_code}' -X PATCH \
+        "$API/repos/$REPO/releases/$RELEASE_ID" \
+        --data-urlencode "access_token=$GITEE_TOKEN" \
+        --data-urlencode "name=$RELEASE_NAME" \
+        --data-urlencode "body=$RELEASE_BODY" || true)"
+    fi
+    PATCH_RESP="$(cat "$PATCH_TMP" 2>/dev/null || true)"
+    rm -f "$PATCH_TMP"
+    if [[ "$PATCH_CODE" == 2* ]]; then
+      PATCH_OK=1
+      break
+    fi
+    if [[ "$MODE" == "json" ]]; then
+      echo "警告：同步标题/说明失败（HTTP ${PATCH_CODE:-无响应}），改用表单编码重试..." >&2
+    fi
+  done
+  if [[ "$PATCH_OK" -eq 1 ]]; then
+    echo "==> 已同步 Release 标题与说明（${#RELEASE_BODY} 字符）"
+  else
+    echo "警告：同步 Release 标题/说明失败（HTTP ${PATCH_CODE:-无响应}），响应：" >&2
+    echo "$PATCH_RESP" >&2
+  fi
+fi
 
 # ---- 2. 获取已存在附件名（用于幂等跳过）----
 EXISTING="$(curl -fsSL -G "$API/repos/$REPO/releases/$RELEASE_ID/attach_files" \

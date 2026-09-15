@@ -217,10 +217,14 @@ jobs:
           GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
         shell: bash
         run: |
-          # Gitee 仅保留 Android arm64-v8a 安装包，且只保留最近 5 个 Release
+          # Gitee 仅保留 Android arm64-v8a 安装包，且只保留最近 5 个 Release；
+          # --body-file 把 GitHub Release 的说明（即上一步生成的 release_notes.md）同步到 Gitee，
+          # 若该 tag 的 Gitee Release 已存在（例如 Gitee Go 流水线先建了），则 PATCH 更新说明
           bash lib/scripts/gitee_release_upload.sh \
             --repo sakura-fly/PiliPlus \
             --tag "${{ github.event.inputs.tag || needs.auto_tag.outputs.auto_tag }}" \
+            --name "${{ github.event.inputs.tag || needs.auto_tag.outputs.auto_tag }}" \
+            --body-file release_notes.md \
             --files 'PiliPlus_android_*arm64-v8a.apk' \
             --keep 5
 
