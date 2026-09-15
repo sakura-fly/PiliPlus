@@ -107,11 +107,18 @@ class _TabletSplitScreenHostState extends State<TabletSplitScreenHost> {
     if (leftWidth < 0) {
       leftWidth = 0;
     }
-    final leftLogicalWidth = leftWidth > 599 ? 599.0 : leftWidth;
     final rightFull = isRightFullScreen || isPortrait;
-    final rightWidth = rightFull
+    var rightWidth = rightFull
         ? screenSize.width
         : screenSize.width - leftWidth;
+
+    // 右侧视频详情必须保持竖屏比例，避免宽屏横屏下视频页被压成
+    // 只有播放器、剩余内容空白。
+    if (!rightFull && rightWidth >= screenSize.height) {
+      rightWidth = screenSize.height - 1;
+      leftWidth = screenSize.width - rightWidth;
+    }
+    final leftLogicalWidth = leftWidth > 599 ? 599.0 : leftWidth;
 
     return Stack(
       fit: StackFit.expand,
