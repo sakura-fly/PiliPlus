@@ -30,6 +30,8 @@ OUTPUT_DIR="${PROJECT_ROOT}/dist/android"
 FLUTTER_BIN=""
 FLAVOR=""
 CN_MIRROR=0
+APPLY_PATCHES=0
+MEDIA_KIT_JARS=0
 CLEAN=0
 NO_PUB=0
 NO_FVM=0
@@ -66,6 +68,8 @@ PiliPlus 本地 Android 打包脚本
       --no-pub                         不执行 flutter pub get
       --no-fvm                         跳过 fvm，直接使用 PATH 中的 flutter
       --cn-mirror                      临时使用腾讯 Gradle + 阿里云 Maven 镜像，构建后自动恢复
+      --apply-patches                  构建前应用 Android 所需的 Flutter/material_ui 补丁
+      --media-kit-jars                 预下载 media_kit 的 libmpv jar（避免 Gradle 下载截断）
   -o, --output <目录>                  产物输出目录，默认 dist/android
   -F, --flavor <名称>                  Android product flavor
       --flutter <路径>                 指定 flutter 可执行文件
@@ -126,6 +130,8 @@ while [ "$#" -gt 0 ]; do
     --no-pub) NO_PUB=1; shift ;;
     --no-fvm) NO_FVM=1; shift ;;
     --cn-mirror) CN_MIRROR=1; shift ;;
+    --apply-patches) APPLY_PATCHES=1; shift ;;
+    --media-kit-jars) MEDIA_KIT_JARS=1; shift ;;
     --dev) DEV=1; shift ;;
     --split) SPLIT=1; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
@@ -394,6 +400,28 @@ main() {
   if [ "$NO_PUB" -eq 0 ]; then
     log "拉取依赖"
     run_cmd "${FLUTTER_CMD[@]}" pub get
+  fi
+
+  if [ "$APPLY_PATCHES" -eq 1 ]; then
+    log "应用 Android 编译补丁"
+    local patch_args=()
+    if [ -n "$FLUTTER_BIN" ] && [ -x "$FLUTTER_BIN" ]; then
+      patch_args+=("--flutter" "$FLUTTER_BIN")
+    elif [ "$NO_FVM" -eq 1 ] && command -v flutter >/dev/null 2>&1; then
+      # --no-fvm 时强制让补丁脚本使用 PATH 中的 flutter，避免又落到 .fvm/flutter_sdk
+      patch_args+=("--flutter" "$(command -v flutter)")
+    elif [ -x "${PROJECT_ROOT}/.fvm/flutter_sdk/bin/flutter" ]; then
+      patch_args+=("--flutter" "${PROJECT_ROOT}/.fvm/flutter_sdk/bin/flutter")
+    fi
+    if [ "$DRY_RUN" -eq 1 ]; then
+      patch_args+=("--dry-run")
+    fi
+    run_cmd bash "${SCRIPT_DIR}/apply_android_patches.sh" "${patch_args[@]}"
+  fi
+
+  if [ "$MEDIA_KIT_JARS" -eq 1 ]; then
+    log "预下载 media_kit/libmpv jar"
+    run_cmd bash "${SCRIPT_DIR}/download_media_kit_jars.sh"
   fi
 
   setup_gradle_mirrors
