@@ -49,6 +49,7 @@ class TabletSplitController extends ChangeNotifier {
   bool Function()? _fullScreenBackHandler;
   bool _replaceRightStackOnNextPush = false;
   bool _lastInteractionFromRight = false;
+  bool _handlingBack = false;
 
   // 打开分屏时暂存根路由的 GetX 状态，关闭分屏后恢复。
   String? _rootCurrent;
@@ -197,49 +198,61 @@ class TabletSplitController extends ChangeNotifier {
 
   /// 优先处理全屏、右侧分屏、右侧 Navigator 和根导航中新压入的页面，
   /// 最后才关闭分屏，避免直接退出。
-  void handleBack() {
-    if (_rightFullScreen) {
-      final handler = _fullScreenBackHandler;
-      if (handler != null && handler()) {
+  Future<void> handleBack() async {
+    if (_handlingBack) {
+      return;
+    }
+    _handlingBack = true;
+    try {
+      if (_rightFullScreen) {
+        final handler = _fullScreenBackHandler;
+        if (handler != null && handler()) {
+          return;
+        }
+      }
+
+      final navigator = _splitNavigatorKey?.currentState;
+      if (navigator != null) {
+        // maybePop 会优先处理右侧当前页面内部的 LocalHistoryEntry
+        // （评论回复、底部弹层等），不会直接跳过它们关闭分屏。
+        final handled = await navigator.maybePop();
+        if (handled) {
+          return;
+        }
+      }
+
+      final current = _arguments;
+      final rightTopName = _rightRouteStack.isNotEmpty
+          ? _rightRouteStack.last.name
+          : null;
+      if (navigator != null &&
+          current != null &&
+          rightTopName == '/videoV' &&
+          current.videoStack.length > 1) {
+        current.videoStack.removeLast();
+        final previous = current.videoStack.last;
+        _displayedArguments = previous;
+        setRightFullScreen(false);
+        navigator.pushReplacementNamed('/videoV', arguments: previous);
         return;
       }
-    }
 
-    final navigator = _splitNavigatorKey?.currentState;
-    if (navigator != null && navigator.canPop()) {
-      navigator.pop();
-      return;
-    }
+      // 有些右侧页面在 GetX 路由状态切换时可能被压到根导航上，
+      // 这里一并按层返回，直到回到打开分屏时的根页面。
+      final rootNavigator = _rootNavigator;
+      final rootTop = _rootRoutes.isNotEmpty ? _rootRoutes.last : null;
+      if (rootNavigator != null &&
+          rootNavigator.canPop() &&
+          rootTop != null &&
+          rootTop != _rootTopWhenOpened) {
+        rootNavigator.pop();
+        return;
+      }
 
-    final current = _arguments;
-    final rightTopName = _rightRouteStack.isNotEmpty
-        ? _rightRouteStack.last.name
-        : null;
-    if (navigator != null &&
-        current != null &&
-        rightTopName == '/videoV' &&
-        current.videoStack.length > 1) {
-      current.videoStack.removeLast();
-      final previous = current.videoStack.last;
-      _displayedArguments = previous;
-      setRightFullScreen(false);
-      navigator.pushReplacementNamed('/videoV', arguments: previous);
-      return;
+      close();
+    } finally {
+      _handlingBack = false;
     }
-
-    // 有些右侧页面在 GetX 路由状态切换时可能被压到根导航上，
-    // 这里一并按层返回，直到回到打开分屏时的根页面。
-    final rootNavigator = _rootNavigator;
-    final rootTop = _rootRoutes.isNotEmpty ? _rootRoutes.last : null;
-    if (rootNavigator != null &&
-        rootNavigator.canPop() &&
-        rootTop != null &&
-        rootTop != _rootTopWhenOpened) {
-      rootNavigator.pop();
-      return;
-    }
-
-    close();
   }
 
   bool get isOpen => _arguments != null;
