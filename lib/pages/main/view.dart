@@ -88,8 +88,10 @@ class _MainAppState extends PopScopeState<MainApp>
         windowManager.setBrightness(brightness);
       }
     }
-    if (TabletSplitController.instance.isOpen) {
-      // 分屏时左侧强制使用手机竖屏导航，把切换 tab 放到底部。
+    if (TabletSplitController.instance.isOpen ||
+        TabletSplitController.instance.isStandalonePortrait) {
+      // 分屏/分屏功能下的横屏半屏模式，强制使用手机竖屏导航，
+      // 把切换 tab 放到底部。
       _mainController.useBottomNav = true;
     } else if (!_mainController.useSideBar) {
       _mainController.useBottomNav = MediaQuery.sizeOf(context).isPortrait;
@@ -309,6 +311,16 @@ class _MainAppState extends PopScopeState<MainApp>
 
   @override
   void onPopInvokedWithResult(bool didPop, Object? result) {
+    final splitController = TabletSplitController.instance;
+    debugPrint(
+      '[PiliSplit] onBack right=${splitController.isOpen} '
+      'left=${splitController.hasLeftPane} '
+      'onRight=${splitController.isLeftPaneOnRight}',
+    );
+    if (splitController.isOpen || splitController.hasLeftPane) {
+      splitController.handleBack();
+      return;
+    }
     if (_mainController.directExitOnBack) {
       _onBack();
     } else {

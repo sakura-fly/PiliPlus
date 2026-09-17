@@ -552,7 +552,26 @@ abstract final class PageUtils {
       ...?extraArguments,
     };
     final splitController = TabletSplitController.instance;
-    if (splitController.isOpen || Get.currentRoute != '/videoV') {
+    debugPrint(
+      '[PiliSplit] toVideoPage route=${Get.currentRoute} '
+      'right=${splitController.isOpen} left=${splitController.hasLeftPane} '
+      'locked=${splitController.isLocked} '
+      'focusRight=${splitController.isInteractionFromRight}',
+    );
+    final keepOnLeft =
+        (splitController.isOpen || splitController.hasLeftPane) &&
+        splitController.isLocked &&
+        !splitController.isInteractionFromRight;
+    if (keepOnLeft) {
+      // 新建一个左侧分屏 pane，处理逻辑和右侧 _VideoSplitPane 相同。
+      final splitArguments = Map<String, dynamic>.from(arguments);
+      if (splitController.openLeft(splitArguments)) {
+        return Future<void>.value();
+      }
+    }
+    if (splitController.isOpen ||
+        splitController.isLeftPaneOnRight ||
+        Get.currentRoute != '/videoV') {
       final splitArguments = Map<String, dynamic>.from(arguments);
       final opened =
           splitController.isOpen && splitController.isInteractionFromRight

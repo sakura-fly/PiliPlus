@@ -1,4 +1,5 @@
 import 'package:PiliPlus/pages/video/view.dart';
+import 'package:PiliPlus/utils/storage_pref.dart';
 import 'package:PiliPlus/utils/tablet_split_controller.dart';
 import 'package:get/get.dart';
 import 'package:material_ui/material_ui.dart';
@@ -16,16 +17,21 @@ class TabletSplitScreenHost extends StatefulWidget {
 class _TabletSplitScreenHostState extends State<TabletSplitScreenHost> {
   final _controller = TabletSplitController.instance;
   late final GlobalKey<NavigatorState> _rootNavigatorKey = Get.key;
+  ScrollableState? _blankScrollable;
 
   @override
   void initState() {
     super.initState();
-    _controller.addListener(_onSplitChanged);
+    _controller
+      ..attachRootNavigatorKey(_rootNavigatorKey)
+      ..addListener(_onSplitChanged);
   }
 
   @override
   void dispose() {
-    _controller.removeListener(_onSplitChanged);
+    _controller
+      ..removeListener(_onSplitChanged)
+      ..detachRootNavigatorKey(_rootNavigatorKey);
     _restoreRootNavigatorKey();
     super.dispose();
   }
@@ -43,6 +49,119 @@ class _TabletSplitScreenHostState extends State<TabletSplitScreenHost> {
     }
   }
 
+  ScrollableState? _findVerticalScrollable() {
+    ScrollableState? result;
+    void visitor(Element element) {
+      if (result != null) {
+        return;
+      }
+      final state = element is StatefulElement ? element.state : null;
+      if (state is ScrollableState) {
+        final position = state.position;
+        if (position.axis == Axis.vertical &&
+            position.maxScrollExtent > position.minScrollExtent) {
+          result = state;
+          return;
+        }
+      }
+      element.visitChildren(visitor);
+    }
+
+    (context as Element).visitChildren(visitor);
+    return result;
+  }
+
+  void _onBlankDragStart(DragStartDetails details) {
+    _blankScrollable = _findVerticalScrollable();
+  }
+
+  void _onBlankDragUpdate(DragUpdateDetails details) {
+    final state = _blankScrollable;
+    if (state == null || !state.mounted) {
+      _blankScrollable = null;
+      return;
+    }
+    final position = state.position;
+    final target = (position.pixels - details.delta.dy).clamp(
+      position.minScrollExtent,
+      position.maxScrollExtent,
+    );
+    position.jumpTo(target.toDouble());
+  }
+
+  void _onBlankDragEnd(DragEndDetails details) {
+    final state = _blankScrollable;
+    _blankScrollable = null;
+    if (state == null || !state.mounted) {
+      return;
+    }
+    final position = state.position;
+    final velocity = details.primaryVelocity ?? 0;
+    if (velocity.abs() < 50) {
+      return;
+    }
+    final target = (position.pixels - velocity * 0.22).clamp(
+      position.minScrollExtent,
+      position.maxScrollExtent,
+    );
+    final duration = (velocity.abs() / 5).clamp(180, 650).round();
+    position.animateTo(
+      target.toDouble(),
+      duration: Duration(milliseconds: duration),
+      curve: Curves.decelerate,
+    );
+  }
+
+  Widget _buildStandalonePortrait(
+    MediaQueryData mediaQuery,
+    Size screenSize,
+  ) {
+    final width = screenSize.width * 0.5;
+    final sideWidth = (screenSize.width - width) / 2;
+
+    Widget side() => GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onVerticalDragStart: _onBlankDragStart,
+      onVerticalDragUpdate: _onBlankDragUpdate,
+      onVerticalDragEnd: _onBlankDragEnd,
+      onVerticalDragCancel: () => _blankScrollable = null,
+    );
+
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        if (sideWidth > 0)
+          Positioned(
+            left: 0,
+            top: 0,
+            bottom: 0,
+            width: sideWidth,
+            child: side(),
+          ),
+        if (sideWidth > 0)
+          Positioned(
+            right: 0,
+            top: 0,
+            bottom: 0,
+            width: sideWidth,
+            child: side(),
+          ),
+        Center(
+          child: SizedBox(
+            width: width,
+            height: screenSize.height,
+            child: MediaQuery(
+              data: mediaQuery.copyWith(
+                size: Size(width, screenSize.height),
+              ),
+              child: widget.child,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final mediaQuery = MediaQuery.of(context);
@@ -50,14 +169,35 @@ class _TabletSplitScreenHostState extends State<TabletSplitScreenHost> {
     _controller.updateScreenSize(screenSize);
 
     final splitArguments = _controller.current;
-    if (splitArguments == null) {
+    final leftArguments = _controller.leftCurrent;
+    final standalonePortrait =
+        splitArguments == null &&
+        leftArguments == null &&
+        Pref.tabletSplitScreen &&
+        // 与 TabletSplitController._canSplit 的平板判断保持一致，
+        // 避免手机横屏时也进入半屏模式却无法分屏。
+        screenSize.shortestSide >= 600 &&
+        screenSize.width > screenSize.height;
+    _controller.setStandalonePortrait(standalonePortrait);
+    if (splitArguments == null && leftArguments == null) {
       _restoreRootNavigatorKey();
+      if (standalonePortrait) {
+        if (_controller.isLeftStandaloneFullScreen) {
+          return widget.child;
+        }
+        return _buildStandalonePortrait(mediaQuery, screenSize);
+      }
       return widget.child;
     }
     final isRightFullScreen = _controller.rightFullScreen;
     final isPortrait = screenSize.width <= screenSize.height;
+    final leftOnRight = _controller.isLeftPaneOnRight;
+    final leftFull = _controller.isLeftPaneFullScreen;
+    debugPrint(
+      '[PiliSplit] host build right=${splitArguments?.id} '
+      'left=${leftArguments?.id} onRight=$leftOnRight full=$leftFull',
+    );
 
-    // 左右 50/50；左侧用小于 600dp 的逻辑宽度，保证手机竖屏布局。
     var leftWidth = screenSize.width * 0.5;
     if (leftWidth < 280) {
       leftWidth = 280;
@@ -69,17 +209,84 @@ class _TabletSplitScreenHostState extends State<TabletSplitScreenHost> {
       leftWidth = 0;
     }
     final rightFull = isRightFullScreen || isPortrait;
-    var rightWidth = rightFull
+    final rightWidth = rightFull
         ? screenSize.width
         : screenSize.width - leftWidth;
-
-    // 右侧视频详情必须保持竖屏比例，避免宽屏横屏下视频页被压成
-    // 只有播放器、剩余内容空白。
-    if (!rightFull && rightWidth >= screenSize.height) {
-      rightWidth = screenSize.height - 1;
-      leftWidth = screenSize.width - rightWidth;
-    }
     final leftLogicalWidth = leftWidth > 599 ? 599.0 : leftWidth;
+
+    Widget rootApp() => Listener(
+      // 左侧主界面同样要上报表交互来源，否则：
+      // 1. 之后点击左侧视频会被当成右侧来源压到右侧栈上；
+      // 2. 返回键会优先处理右侧；
+      // 3. _replaceRightStackOnNextPush 不会置位，右侧旧栈无法清空。
+      behavior: HitTestBehavior.translucent,
+      onPointerDown: (_) => _controller.markInteractionFromLeft(),
+      child: MediaQuery(
+        data: mediaQuery.copyWith(
+          size: Size(leftLogicalWidth, screenSize.height),
+        ),
+        child: widget.child,
+      ),
+    );
+
+    Widget pane(
+      VideoSplitArguments arguments, {
+      required bool isLeft,
+    }) => Listener(
+      behavior: HitTestBehavior.opaque,
+      onPointerDown: (_) {
+        if (isLeft) {
+          _controller
+            ..markInteractionFromLeft()
+            ..useLeftNavigatorKey();
+        } else {
+          _controller
+            ..markInteractionFromRight()
+            ..useSplitNavigatorKey();
+        }
+      },
+      child: _VideoSplitPane(
+        key: ValueKey('${isLeft ? 'left' : 'right'}-${arguments.id}'),
+        splitArguments: arguments,
+        width: isLeft
+            ? leftOnRight
+                  ? rightWidth
+                  : leftWidth
+            : rightFull
+            ? screenSize.width
+            : rightWidth,
+        height: screenSize.height,
+        isLeft: isLeft,
+      ),
+    );
+
+    // pane 用稳定 key：左 pane 出现/消失时，Stack 不会按 index 把右 pane
+    // 误当成新 widget 重建（否则右 pane 的 Navigator/播放状态会被重置）。
+    Widget leftPane() => Positioned(
+      key: ValueKey('split-left-${leftArguments!.id}'),
+      left: leftFull
+          ? 0
+          : leftOnRight
+          ? leftWidth
+          : 0,
+      top: 0,
+      bottom: 0,
+      width: leftFull
+          ? screenSize.width
+          : leftOnRight
+          ? rightWidth
+          : leftWidth,
+      child: pane(leftArguments, isLeft: true),
+    );
+
+    Widget rightPane() => Positioned(
+      key: ValueKey('split-right-${splitArguments!.id}'),
+      left: rightFull ? 0 : leftWidth,
+      top: 0,
+      bottom: 0,
+      width: rightWidth,
+      child: pane(splitArguments, isLeft: false),
+    );
 
     return Stack(
       fit: StackFit.expand,
@@ -89,30 +296,46 @@ class _TabletSplitScreenHostState extends State<TabletSplitScreenHost> {
           top: 0,
           bottom: 0,
           width: leftWidth,
-          child: Listener(
-            behavior: HitTestBehavior.translucent,
-            onPointerDown: (_) => _controller.markInteractionFromLeft(),
-            child: MediaQuery(
-              data: mediaQuery.copyWith(
-                size: Size(leftLogicalWidth, screenSize.height),
-              ),
-              child: widget.child,
-            ),
-          ),
+          child: rootApp(),
         ),
+        if (leftArguments != null) leftPane(),
+        if (splitArguments != null && !leftOnRight && !leftFull) rightPane(),
+        if (leftArguments != null &&
+            splitArguments == null &&
+            !leftOnRight &&
+            !leftFull)
+          Positioned(
+            left: leftWidth,
+            top: 0,
+            bottom: 0,
+            width: rightWidth,
+            child: ColoredBox(color: ColorScheme.of(context).surface),
+          ),
         Positioned(
-          left: rightFull ? 0 : leftWidth,
-          top: 0,
-          bottom: 0,
-          width: rightWidth,
-          child: Listener(
-            behavior: HitTestBehavior.opaque,
-            onPointerDown: (_) => _controller.markInteractionFromRight(),
-            child: _VideoSplitPane(
-              key: ValueKey(splitArguments.id),
-              splitArguments: splitArguments,
-              width: rightWidth,
-              height: screenSize.height,
+          left: 0,
+          right: 0,
+          top: mediaQuery.padding.top + 6,
+          child: Center(
+            child: Material(
+              color: ColorScheme.of(context).surface.withValues(alpha: 0.86),
+              elevation: 2,
+              shape: const CircleBorder(),
+              child: IconButton(
+                visualDensity: VisualDensity.compact,
+                tooltip: _controller.isLocked ? '取消锁定' : '锁定分屏',
+                onPressed: () {
+                  _controller.toggleLock();
+                  if (_controller.isLocked) {
+                    _restoreRootNavigatorKey();
+                  } else {
+                    _controller.useSplitNavigatorKey();
+                  }
+                },
+                icon: Icon(
+                  _controller.isLocked ? Icons.lock : Icons.lock_open,
+                  size: 18,
+                ),
+              ),
             ),
           ),
         ),
@@ -127,11 +350,13 @@ class _VideoSplitPane extends StatefulWidget {
     required this.splitArguments,
     required this.width,
     required this.height,
+    this.isLeft = false,
   });
 
   final VideoSplitArguments splitArguments;
   final double width;
   final double height;
+  final bool isLeft;
 
   @override
   State<_VideoSplitPane> createState() => _VideoSplitPaneState();
@@ -139,18 +364,32 @@ class _VideoSplitPane extends StatefulWidget {
 
 class _VideoSplitPaneState extends State<_VideoSplitPane> {
   late final _navigatorKey = GlobalKey<NavigatorState>();
-  late final _observer = _SplitNavigatorObserver(splitKey: _navigatorKey);
+  late final _observer = _SplitNavigatorObserver(
+    splitKey: _navigatorKey,
+    isLeft: widget.isLeft,
+  );
+  // pane 内部独立的 RouteObserver，直接传给视频页订阅：
+  // 返回上一层时触发 didPopNext，让下层视频重新加载自己的播放源。
+  final _paneRouteObserver = RouteObserver<ModalRoute<dynamic>>();
 
   @override
   void initState() {
     super.initState();
-    TabletSplitController.instance.attachNavigator(_navigatorKey);
+    if (widget.isLeft) {
+      TabletSplitController.instance.attachLeftNavigator(_navigatorKey);
+    } else {
+      TabletSplitController.instance.attachNavigator(_navigatorKey);
+    }
   }
 
   @override
   void dispose() {
     _observer.enabled = false;
-    TabletSplitController.instance.detachNavigator(_navigatorKey);
+    if (widget.isLeft) {
+      TabletSplitController.instance.detachLeftNavigator(_navigatorKey);
+    } else {
+      TabletSplitController.instance.detachNavigator(_navigatorKey);
+    }
     super.dispose();
   }
 
@@ -164,6 +403,8 @@ class _VideoSplitPaneState extends State<_VideoSplitPane> {
         arguments: arguments,
         isSplitScreen: true,
         forcePortrait: true,
+        leftPane: widget.isLeft,
+        paneRouteObserver: _paneRouteObserver,
       ),
     );
   }
@@ -177,6 +418,11 @@ class _VideoSplitPaneState extends State<_VideoSplitPane> {
       final arguments = rawArguments is Map
           ? Map<String, dynamic>.from(rawArguments)
           : widget.splitArguments.arguments;
+      debugPrint(
+        '[PiliSplit] genRoute ${widget.isLeft ? 'L' : 'R'} '
+        'name=$routeName cid=${arguments['cid']} '
+        'raw=${rawArguments is Map ? 'map' : 'fallback'}',
+      );
       return _buildVideoRoute(arguments);
     }
 
@@ -227,7 +473,7 @@ class _VideoSplitPaneState extends State<_VideoSplitPane> {
             ),
             child: Navigator(
               key: _navigatorKey,
-              observers: [_observer],
+              observers: [_observer, _paneRouteObserver],
               onGenerateRoute: _onGenerateRoute,
             ),
           ),
@@ -238,13 +484,27 @@ class _VideoSplitPaneState extends State<_VideoSplitPane> {
 }
 
 class _SplitNavigatorObserver extends NavigatorObserver {
-  _SplitNavigatorObserver({required this.splitKey});
+  _SplitNavigatorObserver({required this.splitKey, this.isLeft = false});
 
   final GlobalKey<NavigatorState> splitKey;
+  final bool isLeft;
   final List<Route<dynamic>> _history = [];
   bool enabled = true;
 
   static String _routeName(Route<dynamic>? route) => route?.settings.name ?? '';
+
+  String _cid(Route<dynamic>? route) {
+    final args = route?.settings.arguments;
+    return args is Map ? '${args['cid']}' : '-';
+  }
+
+  void _logRoute(String event, Route<dynamic>? route) {
+    debugPrint(
+      '[PiliSplit] ${isLeft ? 'L' : 'R'} $event '
+      'name=${_routeName(route)} cid=${_cid(route)} '
+      'history=${_history.length}',
+    );
+  }
 
   void _syncNavigatorKey() {
     if (Get.key != splitKey) {
@@ -288,17 +548,23 @@ class _SplitNavigatorObserver extends NavigatorObserver {
         ),
       );
     }
-    TabletSplitController.instance.updateRightRouteStack(routeStack);
+    if (isLeft) {
+      TabletSplitController.instance.updateLeftRouteStack(routeStack);
+    } else {
+      TabletSplitController.instance.updateRightRouteStack(routeStack);
+    }
   }
 
   @override
   void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
     super.didPush(route, previousRoute);
     _history.add(route);
+    _logRoute('didPush', route);
 
     // 左侧入口打开的新页面：把右侧已有点击栈整体清掉，
     // 让新页面成为分屏里的最底层。
-    if (route is PageRoute &&
+    if (!isLeft &&
+        route is PageRoute &&
         TabletSplitController.instance.consumeReplaceRightStack()) {
       final navigator = this.navigator;
       if (navigator != null) {
@@ -324,9 +590,14 @@ class _SplitNavigatorObserver extends NavigatorObserver {
   @override
   void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
     super.didPop(route, previousRoute);
+    _logRoute('didPop', route);
     _history.remove(route);
     if (route is PageRoute && _routeName(route) == '/videoV') {
-      TabletSplitController.instance.onRightVideoPopped();
+      if (isLeft) {
+        TabletSplitController.instance.onLeftVideoPopped();
+      } else {
+        TabletSplitController.instance.onRightVideoPopped();
+      }
     }
     _sync();
   }
@@ -334,6 +605,7 @@ class _SplitNavigatorObserver extends NavigatorObserver {
   @override
   void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) {
     super.didRemove(route, previousRoute);
+    _logRoute('didRemove', route);
     _history.remove(route);
     _sync();
   }
@@ -341,6 +613,8 @@ class _SplitNavigatorObserver extends NavigatorObserver {
   @override
   void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
     super.didReplace(newRoute: newRoute, oldRoute: oldRoute);
+    _logRoute('didReplace new', newRoute);
+    _logRoute('didReplace old', oldRoute);
     if (oldRoute != null) {
       _history.remove(oldRoute);
     }

@@ -727,6 +727,10 @@ class VideoDetailController extends GetxController
     bool? autoplay,
     bool autoFullScreenFlag = false,
   }) async {
+    debugPrint(
+      '[PiliSplit] playerInit enter cid=${cid.value} '
+      'url=${videoUrl != null} file=$isFileSource',
+    );
     Duration? seek = defaultST ?? playedTime;
     if (seek == .zero) seek = null;
     seek ??= getFirstSegment();
@@ -764,6 +768,7 @@ class VideoDetailController extends GetxController
       volume: volume,
       autoFullScreenFlag: autoFullScreenFlag,
     );
+    debugPrint('[PiliSplit] playerInit done cid=${cid.value}');
 
     if (isClosed) return;
 
