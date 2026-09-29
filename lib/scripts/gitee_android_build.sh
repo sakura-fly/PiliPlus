@@ -140,16 +140,9 @@ printf '{"pili.name":"%s","pili.code":"%s","pili.hash":"%s","pili.time":"%s"}\n'
 sed -i -E "s/^version: .*/version: $ANDROID_VERSION+$VERSION_CODE/" pubspec.yaml
 echo "version: $ANDROID_VERSION+$VERSION_CODE"
 
-echo "==> 6/7 应用项目补丁（失败不中断）"
-# patch.ps1 硬编码查找 ~/.pub-cache/hosted/pub.dev，而镜像源缓存位于 pub.flutter-io.cn 下。
-# 注意：此刻目录尚未生成（pub get 在 patch.ps1 内部执行），悬空链接会在目录创建后自动生效。
-mkdir -p "$HOME/.pub-cache/hosted"
-if [ ! -e "$HOME/.pub-cache/hosted/pub.dev" ]; then
-  ln -s "$HOME/.pub-cache/hosted/pub.flutter-io.cn" "$HOME/.pub-cache/hosted/pub.dev"
-  echo "已建立 pub 缓存符号链接: pub.dev -> pub.flutter-io.cn"
-fi
+echo "==> 6/7 应用项目补丁"
 export GITHUB_WORKSPACE="$PWD"
-pwsh -File lib/scripts/patch.ps1 android || true
+pwsh -File lib/scripts/patch.ps1 android
 
 echo "==> 7/7 构建 arm64-v8a 单 ABI 并重命名 APK"
 

@@ -210,7 +210,7 @@ $patches_material = @($ModalBarrierPatchMaterial, $NavigationDrawerPatchMaterial
                     $FABPatchMaterial, $TextFieldPatchMaterial, $ScaffoldPatchMaterial, $RefreshIndicatorPatchMaterial,
                     $TabsPatchMaterial)
 
-$PubCacheDir = "~/.pub-cache"
+$PubCacheDir = if ($env:PUB_CACHE) { $env:PUB_CACHE } else { "~/.pub-cache" }
 
 switch ($platform.ToLower()) {
     "android" {
@@ -229,22 +229,81 @@ switch ($platform.ToLower()) {
     default {}
 }
 
-try {
-    $MaterialUiDir = Get-ChildItem "$PubCacheDir/hosted/pub.dev" -Directory |
-        Where-Object { $_.Name -like "material_ui-*" } |
-        Select-Object -Last 1
+function Get-PackageDirectory {
+    param([string]$Name)
 
-    if ($MaterialUiDir) {
-        Remove-Item -Path $MaterialUiDir.FullName -Recurse -Force
+    $packageConfig = Join-Path $env:GITHUB_WORKSPACE ".dart_tool/package_config.json"
+    if (Test-Path $packageConfig) {
+        try {
+            $config = Get-Content $packageConfig -Raw | ConvertFrom-Json
+            $package = $config.packages |
+                Where-Object { $_.name -eq $Name } |
+                Select-Object -First 1
+            if ($package -and ($package.rootUri -match '^file://')) {
+                $root = [System.Uri]::UnescapeDataString($package.rootUri.Substring(7))
+                if ($root -match '^/[A-Za-z]:/') {
+                    $root = $root.Substring(1)
+                }
+                if (Test-Path $root) {
+                    return Get-Item $root
+                }
+            }
+        } catch {
+            Write-Host "读取 package_config.json 失败：$_"
+        }
     }
-} catch {
+
+    $hostedDir = Join-Path $PubCacheDir "hosted"
+    if (Test-Path $hostedDir) {
+        $package = Get-ChildItem $hostedDir -Directory -ErrorAction SilentlyContinue |
+            ForEach-Object {
+                Get-ChildItem $_.FullName -Directory -Filter "$Name-*" -ErrorAction SilentlyContinue
+            } |
+            Select-Object -Last 1
+        if ($package) {
+            return $package
+        }
+    }
+
+    return $null
 }
+
+function Remove-PackageDirectory {
+    param([string]$Name)
+
+    $hostedDir = Join-Path $PubCacheDir "hosted"
+    if (Test-Path $hostedDir) {
+        Get-ChildItem $hostedDir -Directory -ErrorAction SilentlyContinue |
+            ForEach-Object {
+                Get-ChildItem $_.FullName -Directory -Filter "$Name-*" -ErrorAction SilentlyContinue |
+                    Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+            }
+    }
+}
+
+function Apply-PatchFile {
+    param([string]$PatchPath)
+
+    git apply --reverse --check "$PatchPath" 2>$null
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "$PatchPath already applied"
+        return
+    }
+
+    git apply "$PatchPath"
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "$PatchPath applied"
+    } else {
+        throw "failed to apply $PatchPath"
+    }
+}
+
+Remove-PackageDirectory "material_ui"
+Remove-PackageDirectory "cupertino_ui"
 
 flutter pub get
 
-$MaterialUiDir = Get-ChildItem "$PubCacheDir/hosted/pub.dev" -Directory |
-    Where-Object { $_.Name -like "material_ui-*" } |
-    Select-Object -Last 1
+$MaterialUiDir = Get-PackageDirectory "material_ui"
 
 if (-not $MaterialUiDir) {
     throw "material_ui package not found in pub cache"
@@ -260,12 +319,7 @@ Get-ChildItem -Path "$env:GITHUB_WORKSPACE/lib/scripts/material" -Filter *.patch
 cd $MaterialUiDir.FullName
 
 foreach ($patch in $patches_material) {
-    git apply "$env:GITHUB_WORKSPACE/$patch"
-    if ($LASTEXITCODE -eq 0) {
-        Write-Host "$patch applied"
-    } else {
-        throw "$LASTEXITCODE"
-    }
+    Apply-PatchFile "$env:GITHUB_WORKSPACE/$patch"
 }
 
 $BottomSheetIOSFlutterPatchCupertino = "lib/scripts/cupertino/bottom_sheet_ios_flutter.patch"
@@ -287,9 +341,7 @@ switch ($platform.ToLower()) {
     default {}
 }
 
-$CupertinoUiDir = Get-ChildItem "$PubCacheDir/hosted/pub.dev" -Directory |
-    Where-Object { $_.Name -like "cupertino_ui-*" } |
-    Select-Object -Last 1
+$CupertinoUiDir = Get-PackageDirectory "cupertino_ui"
 
 if (-not $CupertinoUiDir) {
     throw "cupertino_ui package not found in pub cache"
@@ -305,10 +357,5 @@ Get-ChildItem -Path "$env:GITHUB_WORKSPACE/lib/scripts/cupertino" -Filter *.patc
 cd $CupertinoUiDir.FullName
 
 foreach ($patch in $patches_cupertino) {
-    git apply "$env:GITHUB_WORKSPACE/$patch"
-    if ($LASTEXITCODE -eq 0) {
-        Write-Host "$patch applied"
-    } else {
-        throw "$LASTEXITCODE"
-    }
+    Apply-PatchFile "$env:GITHUB_WORKSPACE/$patch"
 }
