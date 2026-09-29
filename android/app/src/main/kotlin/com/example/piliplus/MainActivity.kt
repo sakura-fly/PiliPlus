@@ -13,10 +13,6 @@ import android.provider.Settings
 import android.view.WindowManager.LayoutParams
 import androidx.core.content.FileProvider
 import com.ryanheise.audioservice.AudioServiceActivity
-import io.flutter.embedding.engine.FlutterEngine
-import io.flutter.plugin.common.MethodChannel
-import java.io.File
-import java.io.FileInputStream
 
 class MainActivity : AudioServiceActivity() {
     // 等待用户授权"安装未知应用"后自动继续安装的 APK 路径
@@ -169,11 +165,6 @@ class MainActivity : AudioServiceActivity() {
             window.attributes.layoutInDisplayCutoutMode =
                 LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
         }
-    }
-
-    override fun onDestroy() {
-        stopService(Intent(this, com.ryanheise.audioservice.AudioService::class.java))
-        super.onDestroy()
     }
 
     override fun onUserLeaveHint() {

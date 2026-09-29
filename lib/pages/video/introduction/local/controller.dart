@@ -45,7 +45,6 @@ class LocalIntroController extends CommonIntroController {
   @override
   void onClose() {
     aidSet.clear();
-    videoPlayerServiceHandler?.onVideoDetailDispose(heroTag);
     super.onClose();
   }
 
