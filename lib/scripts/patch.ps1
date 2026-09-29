@@ -210,7 +210,13 @@ $patches_material = @($ModalBarrierPatchMaterial, $NavigationDrawerPatchMaterial
                     $FABPatchMaterial, $TextFieldPatchMaterial, $ScaffoldPatchMaterial, $RefreshIndicatorPatchMaterial,
                     $TabsPatchMaterial)
 
-$PubCacheDir = if ($env:PUB_CACHE) { $env:PUB_CACHE } else { "~/.pub-cache" }
+$PubCacheDir = if ($env:PUB_CACHE) {
+    $env:PUB_CACHE
+} elseif ($env:OS -eq "Windows_NT") {
+    Join-Path $env:LOCALAPPDATA "Pub/Cache"
+} else {
+    Join-Path $HOME ".pub-cache"
+}
 
 switch ($platform.ToLower()) {
     "android" {
@@ -224,7 +230,6 @@ switch ($platform.ToLower()) {
     "macos" {
     }
     "windows" {
-        $PubCacheDir = "$env:LOCALAPPDATA/Pub/Cache"
     }
     default {}
 }
@@ -255,10 +260,11 @@ function Get-PackageDirectory {
 
     $hostedDir = Join-Path $PubCacheDir "hosted"
     if (Test-Path $hostedDir) {
-        $package = Get-ChildItem $hostedDir -Directory -ErrorAction SilentlyContinue |
+        $package = Get-ChildItem -LiteralPath $hostedDir -Directory -ErrorAction SilentlyContinue |
             ForEach-Object {
-                Get-ChildItem $_.FullName -Directory -Filter "$Name-*" -ErrorAction SilentlyContinue
+                Get-ChildItem -LiteralPath $_.FullName -Directory -ErrorAction SilentlyContinue
             } |
+            Where-Object { $_.Name -like "$Name-*" } |
             Select-Object -Last 1
         if ($package) {
             return $package
@@ -272,12 +278,19 @@ function Remove-PackageDirectory {
     param([string]$Name)
 
     $hostedDir = Join-Path $PubCacheDir "hosted"
-    if (Test-Path $hostedDir) {
-        Get-ChildItem $hostedDir -Directory -ErrorAction SilentlyContinue |
+    if (Test-Path -LiteralPath $hostedDir) {
+        $packageDirs = Get-ChildItem -LiteralPath $hostedDir -Directory -ErrorAction SilentlyContinue |
             ForEach-Object {
-                Get-ChildItem $_.FullName -Directory -Filter "$Name-*" -ErrorAction SilentlyContinue |
-                    Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+                Get-ChildItem -LiteralPath $_.FullName -Directory -ErrorAction SilentlyContinue
+            } |
+            Where-Object { $_.Name -like "$Name-*" }
+        foreach ($package in $packageDirs) {
+            Write-Host "removing cached package: $($package.FullName)"
+            Remove-Item -LiteralPath $package.FullName -Recurse -Force -ErrorAction Stop
+            if (Test-Path -LiteralPath $package.FullName) {
+                throw "failed to remove cached package: $($package.FullName)"
             }
+        }
     }
 }
 
@@ -290,12 +303,23 @@ function Apply-PatchFile {
         return
     }
 
-    git apply "$PatchPath"
+    $output = git apply "$PatchPath" 2>&1
     if ($LASTEXITCODE -eq 0) {
         Write-Host "$PatchPath applied"
-    } else {
-        throw "failed to apply $PatchPath"
+        return
     }
+
+    Write-Host "git apply failed for $PatchPath"
+    $output | ForEach-Object { Write-Host $_ }
+
+    $output = git apply --ignore-whitespace "$PatchPath" 2>&1
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "$PatchPath applied with --ignore-whitespace"
+        return
+    }
+
+    $output | ForEach-Object { Write-Host $_ }
+    throw "failed to apply $PatchPath"
 }
 
 Remove-PackageDirectory "material_ui"
@@ -316,10 +340,31 @@ Get-ChildItem -Path "$env:GITHUB_WORKSPACE/lib/scripts/material" -Filter *.patch
         Set-Content -NoNewline $_.FullName
 }
 
-cd $MaterialUiDir.FullName
-
-foreach ($patch in $patches_material) {
-    Apply-PatchFile "$env:GITHUB_WORKSPACE/$patch"
+$materialPatchAttempt = 0
+while ($true) {
+    try {
+        cd $MaterialUiDir.FullName
+        foreach ($patch in $patches_material) {
+            Apply-PatchFile "$env:GITHUB_WORKSPACE/$patch"
+        }
+        break
+    } catch {
+        if ($materialPatchAttempt -ge 1) {
+            throw
+        }
+        $materialPatchAttempt++
+        Write-Host "material_ui patch 失败，清理缓存后重试：$_"
+        cd $env:GITHUB_WORKSPACE
+        Remove-PackageDirectory "material_ui"
+        Remove-PackageDirectory "cupertino_ui"
+        $packageConfigFile = Join-Path $env:GITHUB_WORKSPACE ".dart_tool/package_config.json"
+        Remove-Item -LiteralPath $packageConfigFile -Force -ErrorAction SilentlyContinue
+        flutter pub get
+        $MaterialUiDir = Get-PackageDirectory "material_ui"
+        if (-not $MaterialUiDir) {
+            throw "material_ui package not found after retry"
+        }
+    }
 }
 
 $BottomSheetIOSFlutterPatchCupertino = "lib/scripts/cupertino/bottom_sheet_ios_flutter.patch"
