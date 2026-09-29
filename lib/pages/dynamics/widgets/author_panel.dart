@@ -99,6 +99,8 @@ class AuthorPanel extends StatelessWidget {
         size: 40,
         moduleAuthor.face,
         pendantImage: moduleAuthor.pendant?.image,
+        officialType: moduleAuthor.officialVerify?.type,
+        vipStatus: moduleAuthor.vip?.status,
       ),
       Flexible(
         child: Column(
