@@ -190,6 +190,12 @@ select_flutter() {
   fi
 
   if [ "$NO_FVM" -eq 0 ]; then
+    # 优先用 fvm，确保与 .fvmrc 版本一致，不依赖可能滞后的 .fvm/flutter_sdk 软链
+    if command -v fvm >/dev/null 2>&1 && [ -f "${PROJECT_ROOT}/.fvmrc" ]; then
+      FLUTTER_CMD=(fvm flutter)
+      return
+    fi
+
     if [ -x "${PROJECT_ROOT}/.fvm/flutter_sdk/bin/flutter" ]; then
       FLUTTER_CMD=("${PROJECT_ROOT}/.fvm/flutter_sdk/bin/flutter")
       return
@@ -410,6 +416,9 @@ main() {
     elif [ "$NO_FVM" -eq 1 ] && command -v flutter >/dev/null 2>&1; then
       # --no-fvm 时强制让补丁脚本使用 PATH 中的 flutter，避免又落到 .fvm/flutter_sdk
       patch_args+=("--flutter" "$(command -v flutter)")
+    elif command -v fvm >/dev/null 2>&1 && [ -f "${PROJECT_ROOT}/.fvmrc" ]; then
+      # FVM 模式：apply_android_patches.sh 会读取 .fvmrc 解析实际 SDK 路径
+      :
     elif [ -x "${PROJECT_ROOT}/.fvm/flutter_sdk/bin/flutter" ]; then
       patch_args+=("--flutter" "${PROJECT_ROOT}/.fvm/flutter_sdk/bin/flutter")
     fi

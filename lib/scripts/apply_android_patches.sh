@@ -55,20 +55,52 @@ while [ "$#" -gt 0 ]; do
 done
 
 find_flutter_root() {
-  local candidate bin
+  local candidate bin fvm_version fvm_root
 
   if [ -n "$FLUTTER_BIN" ]; then
     [ -x "$FLUTTER_BIN" ] || die "--flutter 指定的文件不可执行：$FLUTTER_BIN"
-  elif [ -n "${FLUTTER_ROOT:-}" ] && [ -x "${FLUTTER_ROOT}/bin/flutter" ]; then
-    FLUTTER_BIN="${FLUTTER_ROOT}/bin/flutter"
-  elif [ -x "${PROJECT_ROOT}/.fvm/flutter_sdk/bin/flutter" ]; then
-    FLUTTER_BIN="${PROJECT_ROOT}/.fvm/flutter_sdk/bin/flutter"
-  elif command -v fvm >/dev/null 2>&1 && [ -x "${PROJECT_ROOT}/.fvm/flutter_sdk/bin/flutter" ]; then
-    FLUTTER_BIN="${PROJECT_ROOT}/.fvm/flutter_sdk/bin/flutter"
-  elif command -v flutter >/dev/null 2>&1; then
-    FLUTTER_BIN="$(command -v flutter)"
   else
-    die "未找到 flutter，可用 --flutter <路径> 指定，或先执行 fvm use"
+    # 1) CI 环境通常显式设置 FLUTTER_ROOT
+    if [ -n "${FLUTTER_ROOT:-}" ] && [ -x "${FLUTTER_ROOT}/bin/flutter" ]; then
+      FLUTTER_BIN="${FLUTTER_ROOT}/bin/flutter"
+    fi
+
+    # 2) 优先按 .fvmrc 解析 FVM SDK，兼容 .fvm/flutter_sdk 软链还未更新的情况
+    if [ -z "$FLUTTER_BIN" ] && [ -f "${PROJECT_ROOT}/.fvmrc" ] && command -v python3 >/dev/null 2>&1; then
+      fvm_version="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8")).get("flutter", ""))' "${PROJECT_ROOT}/.fvmrc" 2>/dev/null || true)"
+      if [ -n "$fvm_version" ]; then
+        for fvm_root in \
+          "${FVM_HOME:-$HOME/fvm}/versions/${fvm_version}" \
+          "$HOME/fvm/versions/${fvm_version}" \
+          "$HOME/.fvm/versions/${fvm_version}" \
+          "${PROJECT_ROOT}/.fvm/versions/${fvm_version}"; do
+          if [ -x "${fvm_root}/bin/flutter" ]; then
+            FLUTTER_BIN="${fvm_root}/bin/flutter"
+            break
+          fi
+        done
+      fi
+    fi
+
+    # 3) 仍找不到时，让 fvm 自己输出当前项目实际使用的 flutterRoot
+    if [ -z "$FLUTTER_BIN" ] && command -v fvm >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1; then
+      fvm_root="$(fvm flutter --version --machine 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin).get("flutterRoot", ""))' 2>/dev/null || true)"
+      if [ -n "$fvm_root" ] && [ -x "${fvm_root}/bin/flutter" ]; then
+        FLUTTER_BIN="${fvm_root}/bin/flutter"
+      fi
+    fi
+
+    # 4) 传统 .fvm/flutter_sdk 软链接
+    if [ -z "$FLUTTER_BIN" ] && [ -x "${PROJECT_ROOT}/.fvm/flutter_sdk/bin/flutter" ]; then
+      FLUTTER_BIN="${PROJECT_ROOT}/.fvm/flutter_sdk/bin/flutter"
+    fi
+
+    # 5) PATH 中的 flutter
+    if [ -z "$FLUTTER_BIN" ] && command -v flutter >/dev/null 2>&1; then
+      FLUTTER_BIN="$(command -v flutter)"
+    fi
+
+    [ -n "$FLUTTER_BIN" ] || die "未找到 flutter，可用 --flutter <路径> 指定，或先执行 fvm use"
   fi
 
   [ -x "$FLUTTER_BIN" ] || die "flutter 不可执行：$FLUTTER_BIN"
