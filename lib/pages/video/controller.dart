@@ -83,10 +83,15 @@ class VideoDetailController extends GetxController
   VideoDetailController({
     this.routeArguments,
     this.isSplitScreen = false,
+    this.isSplitPaneLeft = false,
   });
 
   final Map<String, dynamic>? routeArguments;
   final bool isSplitScreen;
+
+  /// 分屏时本控制器属于左侧 pane 还是右侧 pane。
+  /// 用于识别「同一个视频被左右两个 pane 同时打开」的冲突。
+  final bool isSplitPaneLeft;
 
   /// 路由传参
   late final Map args;

@@ -55,8 +55,10 @@ class TabletSplitController extends ChangeNotifier {
   List<SplitRouteInfo> get leftRouteStack => _leftRouteStack;
   NavigatorState? _rootNavigator;
   Route<dynamic>? _rootTopWhenOpened;
-  Object? _fullScreenBackOwner;
-  bool Function()? _fullScreenBackHandler;
+  Object? _leftFullScreenBackOwner;
+  bool Function()? _leftFullScreenBackHandler;
+  Object? _rightFullScreenBackOwner;
+  bool Function()? _rightFullScreenBackHandler;
   bool _replaceRightStackOnNextPush = false;
   bool _lastInteractionFromRight = false;
   bool _handlingBack = false;
@@ -94,7 +96,7 @@ class TabletSplitController extends ChangeNotifier {
   /// 左侧在锁定状态下打开新视频时，两个视频页共用同一个播放器实例，
   /// 右侧残留的全屏状态会让左侧新视频页只显示播放器、隐藏下方内容。
   bool exitRightFullScreen() {
-    final handler = _fullScreenBackHandler;
+    final handler = _rightFullScreenBackHandler;
     if (handler != null && handler()) {
       return true;
     }
@@ -137,6 +139,16 @@ class TabletSplitController extends ChangeNotifier {
     }
   }
 
+  static String? _heroTagOf(Map<String, dynamic>? arguments) =>
+      arguments?['heroTag'] as String?;
+
+  /// 右侧 pane 当前显示视频的 heroTag。
+  String? get rightVisibleHeroTag =>
+      _heroTagOf(_displayedArguments ?? _arguments?.arguments);
+
+  /// 左侧 pane 当前显示视频的 heroTag。
+  String? get leftVisibleHeroTag => _heroTagOf(_leftArguments?.arguments);
+
   bool openLeft(Map<String, dynamic> arguments) {
     _log(
       'openLeft start leftPaneOnRight=$_leftPaneOnRight left=${_leftArguments != null}',
@@ -144,6 +156,13 @@ class TabletSplitController extends ChangeNotifier {
     if (!_canSplit) {
       _log('openLeft canSplit=false');
       return false;
+    }
+    // 右侧正在播放同一个视频：两个 pane 会用同一个 GetX tag 注册
+    // VideoDetailController，直接返回避免状态串台（也不退出右侧全屏）。
+    final heroTag = _heroTagOf(arguments);
+    if (heroTag != null && heroTag == rightVisibleHeroTag) {
+      _log('openLeft same video already in right pane ignored');
+      return true;
     }
     // 左右视频页共用同一个播放器实例，先退出右侧残留的全屏状态，
     // 否则新打开的左侧视频页会被全屏态覆盖（只显示播放器）。
@@ -337,18 +356,33 @@ class TabletSplitController extends ChangeNotifier {
     }
   }
 
+  /// 注册某个 pane 的「退出全屏」处理器。
+  ///
+  /// 左右 pane 各占一个槽位，后注册的不会覆盖另一侧的处理器；
+  /// 任一 pane 销毁时只清自己的槽位。
   void registerFullScreenBackHandler(
     Object owner,
-    bool Function()? handler,
-  ) {
-    _fullScreenBackOwner = owner;
-    _fullScreenBackHandler = handler;
+    bool Function()? handler, {
+    required bool isLeft,
+  }) {
+    if (isLeft) {
+      _leftFullScreenBackOwner = owner;
+      _leftFullScreenBackHandler = handler;
+    } else {
+      _rightFullScreenBackOwner = owner;
+      _rightFullScreenBackHandler = handler;
+    }
   }
 
-  void unregisterFullScreenBackHandler(Object owner) {
-    if (identical(_fullScreenBackOwner, owner)) {
-      _fullScreenBackOwner = null;
-      _fullScreenBackHandler = null;
+  void unregisterFullScreenBackHandler(Object owner, {required bool isLeft}) {
+    if (isLeft) {
+      if (identical(_leftFullScreenBackOwner, owner)) {
+        _leftFullScreenBackOwner = null;
+        _leftFullScreenBackHandler = null;
+      }
+    } else if (identical(_rightFullScreenBackOwner, owner)) {
+      _rightFullScreenBackOwner = null;
+      _rightFullScreenBackHandler = null;
     }
   }
 
@@ -457,7 +491,7 @@ class TabletSplitController extends ChangeNotifier {
   /// 最后才关闭分屏，避免直接退出。
   Future<void> handleBack() async {
     _log(
-      'handleBack enter handling=$_handlingBack right=${_arguments != null} left=${_leftArguments != null} onRight=$_leftPaneOnRight focusRight=$_lastInteractionFromRight locked=$_locked',
+      'handleBack enter handling=$_handlingBack right=${_arguments != null} left=${_leftArguments != null} onRight=$_leftPaneOnRight focusRight=$_lastInteractionFromRight locked=$_locked rightFull=$_rightFullScreen leftFull=$_leftPaneFullScreen handler=${_rightFullScreenBackHandler != null}',
     );
     if (_handlingBack) {
       _log('handleBack reentrant ignored');
@@ -466,7 +500,10 @@ class TabletSplitController extends ChangeNotifier {
     _handlingBack = true;
     try {
       if (_rightFullScreen || _leftPaneFullScreen) {
-        final handler = _fullScreenBackHandler;
+        // 全屏的可能是左 pane 也可能是右 pane，按各自的处理器退出；
+        // 一侧没有注册时再退到另一侧，避免出现「按返回什么都不做」。
+        var handler = _leftPaneFullScreen ? _leftFullScreenBackHandler : null;
+        handler ??= _rightFullScreen ? _rightFullScreenBackHandler : null;
         if (handler != null && handler()) {
           return;
         }
@@ -619,6 +656,13 @@ class TabletSplitController extends ChangeNotifier {
     if (_leftPaneOnRight) {
       return openLeft(arguments);
     }
+    // 左侧 pane 正在播放同一个视频时不要再把它顶到右侧，
+    // 否则两个 pane 会用同一个 GetX tag 注册 VideoDetailController。
+    final heroTag = _heroTagOf(arguments);
+    if (heroTag != null && heroTag == leftVisibleHeroTag) {
+      _log('open same video already in left pane ignored');
+      return true;
+    }
     final current = _arguments;
     if (current != null) {
       final displayed = _displayedArguments ?? current.arguments;
@@ -662,7 +706,9 @@ class TabletSplitController extends ChangeNotifier {
     }
 
     _saveRouting();
-    _rootNavigator = Get.key.currentState;
+    // 根 Navigator 必须用根 key 解析：分屏期间 Get.key 可能被切到 pane 的
+    // Navigator 上，直接取 Get.key.currentState 会拿到 pane。
+    _rootNavigator = _rootNavigatorKey?.currentState ?? Get.key.currentState;
     _rootTopWhenOpened = _rootRoutes.isNotEmpty ? _rootRoutes.last : null;
     _pendingArguments = null;
     _rightFullScreen = false;
@@ -685,6 +731,12 @@ class TabletSplitController extends ChangeNotifier {
     if (displayed['heroTag'] == arguments['heroTag']) {
       return true;
     }
+    // 左侧 pane 正在播放同一个视频时同样要拦掉。
+    final heroTag = _heroTagOf(arguments);
+    if (heroTag != null && heroTag == leftVisibleHeroTag) {
+      _log('openFromRight same video already in left pane ignored');
+      return true;
+    }
     final navigator = _splitNavigatorKey?.currentState;
     setRightFullScreen(false);
     current.videoStack.add(arguments);
@@ -696,34 +748,45 @@ class TabletSplitController extends ChangeNotifier {
     return open(arguments, videoStack: List.of(current.videoStack));
   }
 
-  /// 横屏分屏切回竖屏时：关闭分屏，并把右侧完整导航栈重新压入根导航栈。
+  /// 横屏分屏切回竖屏时：关闭分屏，并把分屏的完整导航栈重新压入根导航栈。
+  ///
+  /// 优先迁移右侧 pane；右侧已经退出（只剩被顶到右侧的左 pane）时迁移左 pane。
   void collapseToPortrait() {
-    final current = _arguments;
+    final rightArguments = _arguments;
+    final leftArguments = _leftArguments;
+    final current = rightArguments ?? leftArguments;
     if (current == null || current.videoStack.isEmpty) {
       return;
     }
-    final routeStack = List<SplitRouteInfo>.from(_rightRouteStack);
+    final useLeft = rightArguments == null;
+    var routeStack = List<SplitRouteInfo>.from(
+      useLeft ? _leftRouteStack : _rightRouteStack,
+    );
     final videoStack = List<Map<String, dynamic>>.from(current.videoStack);
+    // pane 的路由栈可能还没记录完整（例如刚创建就旋转），
+    // 这种情况下按视频栈重建，保证视频层完整。
+    final videoRouteCount = routeStack
+        .where((route) => route.name == '/videoV')
+        .length;
+    if (videoRouteCount < videoStack.length) {
+      routeStack = [
+        for (final args in videoStack)
+          SplitRouteInfo(name: '/videoV', arguments: args),
+      ];
+    }
     close();
+    // close() 后 host 尚未重建，先手动把 Get.key 切回根 Navigator，
+    // 否则下面的 Get.toNamed 会走到已经销毁的 pane Navigator。
+    useRootNavigatorKey();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (routeStack.isNotEmpty) {
-        for (final route in routeStack) {
-          final name = route.name;
-          if (name == null || name.isEmpty) {
-            continue;
-          }
-          Get.toNamed(
-            name,
-            arguments: route.arguments,
-            preventDuplicates: false,
-          );
+      for (final route in routeStack) {
+        final name = route.name;
+        if (name == null || name.isEmpty) {
+          continue;
         }
-        return;
-      }
-      for (final args in videoStack) {
         Get.toNamed(
-          '/videoV',
-          arguments: args,
+          name,
+          arguments: route.arguments,
           preventDuplicates: false,
         );
       }
@@ -739,7 +802,8 @@ class TabletSplitController extends ChangeNotifier {
     if (!_rootRoutes.any((route) => _routeNameOf(route) != '/videoV')) {
       return;
     }
-    final rootNavigator = Get.key.currentState;
+    final rootNavigator =
+        _rootNavigatorKey?.currentState ?? Get.key.currentState;
     if (rootNavigator == null) {
       return;
     }
@@ -756,7 +820,10 @@ class TabletSplitController extends ChangeNotifier {
   /// 如果根导航里还打开了内容，则把这些内容整体迁到右侧分屏，
   /// 根页面保持不动；如果根导航只有根页面，则返回 false 交给上层关闭分屏。
   bool _moveLeftStackToRight() {
-    final rootNavigator = _rootNavigator ?? Get.key.currentState;
+    final rootNavigator =
+        _rootNavigatorKey?.currentState ??
+        _rootNavigator ??
+        Get.key.currentState;
     final targetNavigator = _splitNavigatorKey?.currentState;
     if (rootNavigator == null || targetNavigator == null) {
       return false;
@@ -811,8 +878,10 @@ class TabletSplitController extends ChangeNotifier {
     _leftRouteStack = const [];
     _rootNavigator = null;
     _rootTopWhenOpened = null;
-    _fullScreenBackOwner = null;
-    _fullScreenBackHandler = null;
+    _leftFullScreenBackOwner = null;
+    _leftFullScreenBackHandler = null;
+    _rightFullScreenBackOwner = null;
+    _rightFullScreenBackHandler = null;
     _replaceRightStackOnNextPush = false;
     _lastInteractionFromRight = false;
     _locked = false;

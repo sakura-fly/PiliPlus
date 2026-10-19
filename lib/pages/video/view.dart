@@ -189,10 +189,23 @@ class _VideoDetailPageVState extends State<VideoDetailPageV>
     PlPlayerController.setPlayCallBack(playCallBack);
     PlPlayerController.setPrevPlayCallBack(prevPlayCallBack);
     PlPlayerController.setNextPlayCallBack(nextPlayCallBack);
+    if (Get.isRegistered<VideoDetailController>(tag: heroTag)) {
+      final registeredVideoCtr = Get.find<VideoDetailController>(tag: heroTag);
+      // 同一视频的旧页面可能还没销毁（例如横竖屏迁移时根导航和分屏 pane
+      // 短暂共存）：宿主身份不一致时不能复用它的 controller，否则旧页面
+      // dispose 会销毁播放器，新页面只剩封面。
+      // 旧实例仍由旧页面持有，这里只解除 GetX 注册。
+      if (registeredVideoCtr.isSplitScreen != widget.isSplitScreen ||
+          (widget.isSplitScreen &&
+              registeredVideoCtr.isSplitPaneLeft != widget.leftPane)) {
+        Get.delete<VideoDetailController>(tag: heroTag, force: true);
+      }
+    }
     videoDetailController = Get.put(
       VideoDetailController(
         routeArguments: _args,
         isSplitScreen: widget.isSplitScreen,
+        isSplitPaneLeft: widget.leftPane,
       ),
       tag: heroTag,
       permanent: widget.isSplitScreen,
@@ -206,17 +219,7 @@ class _VideoDetailPageVState extends State<VideoDetailPageV>
               TabletSplitController.instance.setRightFullScreen(value);
             }
           });
-      TabletSplitController.instance.registerFullScreenBackHandler(this, () {
-        final player = videoDetailController.plPlayerController;
-        if (!player.isFullScreen.value) {
-          return false;
-        }
-        player.triggerFullScreen(status: false);
-        if (player.controlsLock.value) {
-          player.onLockControl(false);
-        }
-        return true;
-      });
+      _registerFullScreenBackHandler();
     } else if (_isStandaloneLeftVideo) {
       _fullScreenSub = videoDetailController.plPlayerController.isFullScreen
           .listen(TabletSplitController.instance.setLeftStandaloneFullScreen);
@@ -286,6 +289,26 @@ class _VideoDetailPageVState extends State<VideoDetailPageV>
         ..addStatusLister(playerListener)
         ..addPositionListener(positionListener);
     }
+  }
+
+  /// pane 内压入新视频页时，新页面会覆盖全屏返回处理器；
+  /// 返回本页后必须重新注册，否则全屏时按返回会直接关闭分屏。
+  void _registerFullScreenBackHandler() {
+    TabletSplitController.instance.registerFullScreenBackHandler(
+      this,
+      () {
+        final player = videoDetailController.plPlayerController;
+        if (!player.isFullScreen.value) {
+          return false;
+        }
+        player.triggerFullScreen(status: false);
+        if (player.controlsLock.value) {
+          player.onLockControl(false);
+        }
+        return true;
+      },
+      isLeft: widget.leftPane,
+    );
   }
 
   void positionListener(Duration position) {
@@ -488,7 +511,10 @@ class _VideoDetailPageVState extends State<VideoDetailPageV>
     _fullScreenSub?.cancel();
     _paneRouteObserver?.unsubscribe(this);
     if (widget.isSplitScreen) {
-      TabletSplitController.instance.unregisterFullScreenBackHandler(this);
+      TabletSplitController.instance.unregisterFullScreenBackHandler(
+        this,
+        isLeft: widget.leftPane,
+      );
       if (widget.leftPane) {
         TabletSplitController.instance.setLeftPaneFullScreen(false);
       } else {
@@ -578,6 +604,9 @@ class _VideoDetailPageVState extends State<VideoDetailPageV>
 
     addObserverMobile(this);
 
+    // 页面初次打开时若 autoPlay=false，videoSourceInit 不会给字段赋值；
+    // 返回本页时这里的 playCallBack 仍指向 null，播放器就不会真正开始播放。
+    plPlayerController ??= videoDetailController.plPlayerController;
     plPlayerController?.isLive = false;
     if (videoDetailController.plPlayerController.playerStatus.isPlaying &&
         videoDetailController.playerStatus != PlayerStatus.playing) {
@@ -587,6 +616,9 @@ class _VideoDetailPageVState extends State<VideoDetailPageV>
     PlPlayerController.setPlayCallBack(playCallBack);
     PlPlayerController.setPrevPlayCallBack(prevPlayCallBack);
     PlPlayerController.setNextPlayCallBack(nextPlayCallBack);
+    if (widget.isSplitScreen) {
+      _registerFullScreenBackHandler();
+    }
 
     introController.startTimer();
 
@@ -622,9 +654,9 @@ class _VideoDetailPageVState extends State<VideoDetailPageV>
         autoplay: controller.playerStatus?.isPlaying ?? false,
       );
     } else if (widget.isSplitScreen && hasSource) {
-      // 两个视频页共用同一个 Player 实例，返回本页时必须把播放源切回本页；
-      // 同时 autoPlay=false 时播放器会被封面遮罩盖住，这里一并置 true，
-      // 让返回后的页面真正显示出本页视频。
+      // 两个视频页共用同一个 Player 实例，返回本页时必须把播放源切回本页。
+      // 必须一起 autoplay：只置 autoPlay=true 会去掉封面遮罩，而暂停加载的
+      // 播放源没有可渲染的首帧，页面会变成一整块黑屏。
       final wasPlaying = controller.playerStatus?.isPlaying ?? false;
       debugPrint(
         '[PiliSplit] didPopNext -> playerInit(split) hero=$heroTag '
@@ -632,7 +664,7 @@ class _VideoDetailPageVState extends State<VideoDetailPageV>
       );
       controller
         ..autoPlay = true
-        ..playerInit(autoplay: wasPlaying);
+        ..playerInit(autoplay: true);
     } else {
       debugPrint(
         '[PiliSplit] didPopNext -> skip playerInit hero=$heroTag '
@@ -1411,15 +1443,15 @@ class _VideoDetailPageVState extends State<VideoDetailPageV>
   }) => popScope(
     key: videoDetailController.videoPlayerKey,
     canPop:
-        !widget.isSplitScreen &&
-        !isFullScreen &&
-        !videoDetailController.plPlayerController.isDesktopPip &&
-        (videoDetailController.horizontalScreen || isPortrait),
+        // 分屏时返回键统一由 TabletSplitController.handleBack 处理；
+        // 这里固定为 true，避免 pane 自己的 Navigator 因 doNotPop 卡住。
+        widget.isSplitScreen ||
+        (!isFullScreen &&
+            !videoDetailController.plPlayerController.isDesktopPip &&
+            (videoDetailController.horizontalScreen || isPortrait)),
     onPopInvokedWithResult: (didPop, result) {
       if (widget.isSplitScreen) {
-        // 一次系统返回会同步触发根路由上所有 PopEntry 的
-        // onPopInvokedWithResult（主界面 + 每个分屏页），这里照常上报，
-        // 由 TabletSplitController.handleBack 内部对同一批调用去重。
+        // didPop 为 false 说明 pane 内的 pop 被拦截，交给分屏状态机处理。
         if (!didPop) {
           TabletSplitController.instance.handleBack();
         }

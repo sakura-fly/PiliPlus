@@ -24,7 +24,20 @@ abstract class PopScopeState<T extends StatefulWidget> extends State<T>
   void initState() {
     super.initState();
     canPopNotifier = ValueNotifier<bool>(initCanPop);
-    _route = (Get.routing.route as ModalRoute)..registerPopEntry(this);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // 注册到本 widget 实际所在的 route，而不是全局的 Get.routing.route：
+    // 分屏 pane 里的 PopScope 必须作用于 pane 自己的 Navigator，
+    // 否则会污染根导航的 popDisposition，同时 pane 内的拦截也会失效。
+    final rawRoute = ModalRoute.of(context) ?? Get.routing.route;
+    final route = rawRoute is ModalRoute ? rawRoute : null;
+    if (!identical(route, _route)) {
+      _route?.unregisterPopEntry(this);
+      _route = route?..registerPopEntry(this);
+    }
   }
 
   @override

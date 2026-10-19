@@ -18,6 +18,7 @@ class _TabletSplitScreenHostState extends State<TabletSplitScreenHost> {
   final _controller = TabletSplitController.instance;
   late final GlobalKey<NavigatorState> _rootNavigatorKey = Get.key;
   ScrollableState? _blankScrollable;
+  bool? _lastIsLandscape;
 
   @override
   void initState() {
@@ -41,6 +42,39 @@ class _TabletSplitScreenHostState extends State<TabletSplitScreenHost> {
       return;
     }
     setState(() {});
+  }
+
+  /// 横竖屏切换时在「竖屏根导航」和「横屏分屏」之间迁移。
+  ///
+  /// 只有横屏平板才允许分屏；旋转到竖屏时把分屏的导航栈迁回根导航，
+  /// 旋转回横屏时再把根导航里的视频迁进右侧 pane。
+  void _handleOrientationChange(Size screenSize) {
+    final isLandscape = screenSize.width > screenSize.height;
+    final previous = _lastIsLandscape;
+    if (previous == isLandscape) {
+      return;
+    }
+    _lastIsLandscape = isLandscape;
+    if (previous == null || !Pref.tabletSplitScreen) {
+      return;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      final controller = _controller;
+      if (isLandscape) {
+        if (controller.isOpen || controller.hasLeftPane) {
+          return;
+        }
+        final videoStack = controller.rootVideoStack;
+        if (videoStack.isNotEmpty) {
+          controller.convertRootVideosToSplit(videoStack);
+        }
+      } else if (controller.isOpen || controller.hasLeftPane) {
+        controller.collapseToPortrait();
+      }
+    });
   }
 
   void _restoreRootNavigatorKey() {
@@ -167,6 +201,7 @@ class _TabletSplitScreenHostState extends State<TabletSplitScreenHost> {
     final mediaQuery = MediaQuery.of(context);
     final screenSize = mediaQuery.size;
     _controller.updateScreenSize(screenSize);
+    _handleOrientationChange(screenSize);
 
     final splitArguments = _controller.current;
     final leftArguments = _controller.leftCurrent;
@@ -298,6 +333,10 @@ class _TabletSplitScreenHostState extends State<TabletSplitScreenHost> {
           width: leftWidth,
           child: rootApp(),
         ),
+        // 左 pane 全屏时右 pane 仍然留在树上（被全屏的左 pane 盖住）：
+        // 一旦从树上移除，右 pane 的 Navigator 和整条导航栈都会被销毁，
+        // 退出全屏后只剩一层视频页。
+        if (splitArguments != null && !leftOnRight && leftFull) rightPane(),
         if (leftArguments != null) leftPane(),
         if (splitArguments != null && !leftOnRight && !leftFull) rightPane(),
         if (leftArguments != null &&

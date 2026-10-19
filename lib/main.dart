@@ -96,7 +96,9 @@ class _TabletSplitBackObserver with WidgetsBindingObserver {
   @override
   Future<bool> didPopRoute() async {
     final controller = TabletSplitController.instance;
-    if (controller.isOpen) {
+    // 只有左侧 pane 存在（右侧已退出/已被顶掉）时也要接管，
+    // 否则系统返回会直接落到根导航甚至退出 App。
+    if (controller.isOpen || controller.hasLeftPane) {
       controller.handleBack();
       return true;
     }
