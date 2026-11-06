@@ -1359,6 +1359,19 @@ class _PLVideoPlayerState extends State<PLVideoPlayer>
     );
     final isLive = plPlayerController.isLive;
 
+    /// 底部常驻进度条尺寸：随播放器宽度自适应，小屏上也能看清进度圆点
+    final double btmBarScale = (maxWidth / 600).clamp(1.0, 1.25);
+    final double btmBarThickness = 4.5 * btmBarScale;
+    final double btmThumbRadius = 4.5 * btmBarScale;
+    /// ProgressBar 实际高度，即 max(2 * thumbRadius, barHeight)
+    final double btmBarHeight = math.max(2 * btmThumbRadius, btmBarThickness);
+    /// 分段进度条垂直居中于进度条上
+    final double btmSegmentBottom = math.max(0.0, (btmBarHeight - 3.5) / 2);
+    /// 看点进度条及高能进度条底边位置，保持在进度条上方
+    final double btmOverlayBottom = btmBarHeight - 0.75;
+    /// buildDmChart 内部以 4.25 为基准，此处补上差值
+    final double btmDmChartOffset = btmOverlayBottom - 4.25;
+
     final child = Stack(
       fit: StackFit.passthrough,
       key: _playerKey,
@@ -1703,7 +1716,7 @@ class _PLVideoPlayerState extends State<PLVideoPlayer>
         /// 进度条 live模式下禁用
         if (!isLive)
           Positioned(
-            bottom: -2.2,
+            bottom: 0,
             left: 0,
             right: 0,
             child: Obx(
@@ -1739,12 +1752,13 @@ class _PLVideoPlayerState extends State<PLVideoPlayer>
                           buffered: plPlayerController.buffered.value,
                           total: plPlayerController.duration.value,
                           progressBarColor: primary,
-                          baseBarColor: const Color(0x33FFFFFF),
+                          baseBarColor: const Color(0x4DFFFFFF),
                           bufferedBarColor: bufferedBarColor,
                           thumbColor: primary,
                           thumbGlowColor: thumbGlowColor,
-                          barHeight: 3.5,
-                          thumbRadius: 2.5,
+                          barHeight: btmBarThickness,
+                          thumbRadius: btmThumbRadius,
+                          thumbGlowRadius: btmThumbRadius * 4,
                         ),
                       ),
                       if (plPlayerController.enableBlock &&
@@ -1752,7 +1766,7 @@ class _PLVideoPlayerState extends State<PLVideoPlayer>
                         Positioned(
                           left: 0,
                           right: 0,
-                          bottom: 0.75,
+                          bottom: btmSegmentBottom,
                           child: SegmentProgressBar(
                             segments: videoDetailController.segmentProgressList,
                           ),
@@ -1761,7 +1775,7 @@ class _PLVideoPlayerState extends State<PLVideoPlayer>
                           videoDetailController.viewPointList.isNotEmpty &&
                           videoDetailController.showVP.value)
                         Padding(
-                          padding: const .only(bottom: 4.25),
+                          padding: .only(bottom: btmOverlayBottom),
                           child: ViewPointSegmentProgressBar(
                             segments: videoDetailController.viewPointList,
                             onSeek: PlatformUtils.isMobile
@@ -1782,7 +1796,12 @@ class _PLVideoPlayerState extends State<PLVideoPlayer>
                           videoDetailController.showDmTrendChart.value)
                         if (videoDetailController.dmTrend.value?.dataOrNull
                             case final list?)
-                          buildDmChart(primary, list, videoDetailController),
+                          buildDmChart(
+                            primary,
+                            list,
+                            videoDetailController,
+                            btmDmChartOffset,
+                          ),
                     ],
                   ),
                 );
