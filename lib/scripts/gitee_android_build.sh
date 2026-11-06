@@ -99,9 +99,82 @@ fi
 # 记录本次使用的 SDK 版本，供下次构建判断缓存是否仍然有效
 printf '%s' "$FLUTTER_VERSION" > "$FLUTTER_ROOT/.piliplus_flutter_version" 2>/dev/null || true
 export PATH="$FLUTTER_ROOT/bin:$PATH"
-# 国内 CI 使用 Flutter 镜像加速 pub 与引擎下载
-export PUB_HOSTED_URL="${PUB_HOSTED_URL:-https://pub.flutter-io.cn}"
+# ---- pub 源选择（开始）----
+# 必须与 pubspec.lock 里锁定的 hosted url 保持一致：PUB_HOSTED_URL 与 lock 不一致时，
+# dart pub 会重新解析依赖并改用 PUB_HOSTED_URL 下载。pub.flutter-io.cn 的元数据接口
+# 虽仍返回 200，但其归档路径已全部失效（实测 lock 中 226/226 个包归档 404），
+# 于是报 "could not find package xxx at https://pub.flutter-io.cn" 并以 69 退出。
+# 因此默认直接读取 lock 中出现次数最多的 hosted url，保证 CI 与本地同源。
+# 注意：FLUTTER_STORAGE_BASE_URL 只负责 Dart SDK / 引擎制品（实测能正常下载 227M），
+#       与 pub 包归档是两套独立路径，不要跟着改。
 export FLUTTER_STORAGE_BASE_URL="${FLUTTER_STORAGE_BASE_URL:-https://storage.flutter-io.cn}"
+
+LOCK_PUB_URL=$(sed -nE 's/^[[:space:]]*url:[[:space:]]*"?(https?:\/\/[^"[:space:]]+)"?[[:space:]]*$/\1/p' pubspec.lock \
+  | grep -v 'github.com' | sort | uniq -c | sort -rn | head -1 | awk '{print $2}')
+LOCK_PUB_URL="${LOCK_PUB_URL:-https://pub.dev}"
+echo "pubspec.lock 锁定的源：$LOCK_PUB_URL"
+
+# 体检一个真实存在的包：仅元数据可用还不够，必须确认归档能下载
+# （pub.flutter-io.cn 正是「元数据 200 / 归档 404」的典型半死镜像）
+probe_pub_url() {
+  local base="${1%/}" meta archive code
+  meta="$(curl -fsSL --max-time 20 "$base/api/packages/live_photo_maker" 2>/dev/null)" || return 1
+  # 校验锁定版本 0.0.6 的归档（而非 latest），避免「latest 有、锁定版本缺」的误判
+  archive="$(printf '%s' "$meta" | python3 -c \
+    'import sys,json; d=json.load(sys.stdin); v=[x for x in d["versions"] if x["version"]=="0.0.6"]; print((v[0] if v else d["latest"])["archive_url"])' 2>/dev/null)" || return 1
+  [ -n "$archive" ] || return 1
+  code="$(curl -sSL -o /dev/null -r 0-0 --max-time 25 -w '%{http_code}' "$archive" 2>/dev/null)" || return 1
+  [ "$code" = 200 ] || [ "$code" = 206 ]
+}
+
+# 候选顺序：外部显式指定 > lock 源 > 国内可用镜像 > 官方源
+PUB_CANDIDATES=("${PUB_HOSTED_URL:-}" "$LOCK_PUB_URL" \
+  "https://mirrors.tuna.tsinghua.edu.cn/dart-pub/" \
+  "https://mirror.sjtu.edu.cn/dart-pub/" \
+  "https://mirrors.cloud.tencent.com/dart-pub/" \
+  "https://pub.dev")
+PUB_SELECTED=""
+PUB_TRIED=""
+for candidate in "${PUB_CANDIDATES[@]}"; do
+  [ -n "$candidate" ] || continue
+  key="${candidate%/}"
+  case " $PUB_TRIED " in *" $key "*) continue ;; esac
+  PUB_TRIED="$PUB_TRIED $key"
+  echo "检查 pub 源：$candidate"
+  if probe_pub_url "$candidate"; then
+    PUB_SELECTED="$candidate"
+    break
+  fi
+  echo "  归档不可用，尝试下一个"
+done
+if [ -z "$PUB_SELECTED" ]; then
+  echo "错误：没有可用的 pub 源（已尝试：$PUB_TRIED）" >&2
+  exit 1
+fi
+export PUB_HOSTED_URL="$PUB_SELECTED"
+echo "已选定 pub 源：$PUB_HOSTED_URL"
+
+# 若回退到了与 lock 不同的源，同步改写 lock 的 hosted url；
+# 否则 pub 仍会按 lock 记录的旧地址下载而再次失败。
+if [ "${PUB_SELECTED%/}" != "${LOCK_PUB_URL%/}" ]; then
+  echo "警告：lock 锁定的源不可用，同步改写 pubspec.lock 的 hosted url 为 $PUB_SELECTED"
+  python3 - "$PUB_SELECTED" <<'PYCODE'
+import re, sys
+url = sys.argv[1]
+with open('pubspec.lock', encoding='utf-8') as f:
+    lines = f.readlines()
+changed = 0
+for i, line in enumerate(lines):
+    if re.match(r'^\s+url:\s*"?https?://', line) and 'github.com' not in line:
+        indent = re.match(r'^(\s*)', line).group(1)
+        lines[i] = f'{indent}url: "{url}"\n'
+        changed += 1
+with open('pubspec.lock', 'w', encoding='utf-8') as f:
+    f.writelines(lines)
+print(f'  已改写 {changed} 处 hosted url')
+PYCODE
+fi
+# ---- pub 源选择（结束）----
 
 # Gitee 执行器访问 GitHub 不稳定：pub get 的 git 依赖统一改走国内代理
 git config --global url."https://ghfast.top/https://github.com/".insteadOf "https://github.com/"
