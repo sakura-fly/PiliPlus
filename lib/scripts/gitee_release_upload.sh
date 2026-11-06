@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 # =============================================================================
 # PiliPlus —— 上传构建产物到 Gitee Release
-# 由 .github/workflows/*.yml 在打包完成后调用（Gitee 仓库: sakura-fly/PiliPlus）。
-# 依赖：curl（ubuntu / macos / windows Git Bash 均自带）。
+# 由 .workflow/android-pipeline.yml（Gitee Go 流水线）在打包完成后调用
+# （Gitee 仓库: sakura-fly/PiliPlus）。
+# 依赖：curl、bash。
 #
 # 环境变量：
-#   GITEE_TOKEN   Gitee 私人令牌。在 GitHub 仓库 Settings -> Secrets 添加，
-#                 命名 GITEE_TOKEN，令牌需勾选 projects 权限。
+#   GITEE_TOKEN   Gitee 私人令牌。由流水线全局参数 release_key 映射而来
+#                 （Gitee Go 保留 GITEE_ 前缀，故参数不能命名为 GITEE_TOKEN），
+#                 令牌需勾选 projects 权限。
 #                 未配置时脚本打印警告并以 0 退出（跳过上传）。
 #
 # 参数：
@@ -22,7 +24,7 @@
 # 行为：按 tag 查找 Gitee Release，不存在则自动创建；上传前对比已有附件，
 #       同名文件自动跳过（幂等，可重复运行）。
 #       传入 --name / --body / --body-file 时，若 Release 已存在则 PATCH 更新
-#       标题与说明 —— 用于把 GitHub Release 的详情同步到 Gitee；
+#       标题与说明 —— 用于把流水线生成的 release_notes.md 同步到 Gitee；
 #       不传这些参数则维持原有行为（标题=tag，说明=PiliPlus <tag>）。
 # =============================================================================
 set -euo pipefail
@@ -156,9 +158,9 @@ fi
 echo "==> Release ID: $RELEASE_ID"
 
 # ---- 1.5 同步标题/说明（仅当传入 --name / --body / --body-file）----
-# 用途：GitHub 流水线打包后调用，把 GitHub Release 的说明（release_notes.md）搬到 Gitee。
+# 用途：把 Gitee Go 流水线生成的 release_notes.md 写入 Gitee Release。
 # 新建的 Release 在创建请求里已带上标题/说明，只有「已存在」的才需要 PATCH 覆盖
-# （典型场景：Gitee Go 流水线先建了 Release，或重跑工作流补同步说明）
+# （典型场景：重跑流水线补传 APK 或更新说明）
 if [[ "$SYNC_META" -eq 1 && "$RELEASE_EXISTED" -eq 1 ]]; then
   META_PAYLOAD="{\"access_token\":\"$TOKEN_JSON\",\"name\":\"$NAME_JSON\",\"body\":\"$BODY_JSON\"}"
   PATCH_OK=0

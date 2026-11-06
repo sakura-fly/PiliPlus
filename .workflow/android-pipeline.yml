@@ -12,12 +12,15 @@
 # 签名：全局参数 KEYGEN_SEED 取前 32 位 -> SHA-256 -> keytool 生成 key.jks
 #   （同一种子 = 同一签名，KEYGEN_SEED 发版后不要改动）
 #
-# 发布：构建完成后把 arm64-v8a（v8）APK 上传到本仓库的 Gitee Release，
+# 发布：Gitee Release 由本流水线独立负责（GitHub Actions 已移除 Gitee 上传步骤）。
+#   构建完成后把 arm64-v8a（v8）APK 上传到本仓库的 Gitee Release，
 #   tag 规则与 GitHub 流水线保持一致：v<versionName>+<commitCount>（如 v2.1.2+5397）；
+#   Release 标题 = tag，说明由 lib/scripts/gitee_release_notes.sh 生成，格式与 GitHub
+#   流水线的 release_notes.md 一致（本仓库变更 + 上游 PiliPlus 新版本说明）；
 #   上传完成后只保留最近 5 个 Release（lib/scripts/gitee_release_upload.sh --keep 5 自动清理）。
 #   前置条件：在「仓库 -> 流水线 -> 全局参数」配置 release_key
-#   （Gitee 私人令牌，需勾选 projects 权限；值可与 GitHub 侧 Secrets 的 GITEE_TOKEN 相同。
-#   注意 Gitee Go 保留 GITEE_ 前缀，不能用 GITEE_TOKEN 命名）。
+#   （Gitee 私人令牌，需勾选 projects 权限。注意 Gitee Go 保留 GITEE_ 前缀，
+#   不能用 GITEE_TOKEN 命名）。
 #   未配置 release_key 时跳过 Release 上传，仅构建并上传制品库。
 #
 # 产物：只构建 arm64-v8a 单 ABI；build@gcc 暂存 apk/（7 天），
@@ -86,6 +89,11 @@ stages:
 
             bash lib/scripts/gitee_android_build.sh
 
+            # 生成 Release 说明（与 build.yml 的 Generate release notes 同格式）
+            # 放在构建之后：基础依赖（curl/python3）已装好，且 patch 不影响 git 历史；
+            # 生成失败时删除文件，上传脚本会自动回退到默认说明，不阻断发布
+            bash lib/scripts/gitee_release_notes.sh release_notes.md || rm -f release_notes.md
+
             # 上传 arm64-v8a APK 到 Gitee Release，并只保留最近 5 个 Release
             # 全局参数名为 release_key（Gitee Go 禁止 GITEE_ 前缀）；
             # gitee_release_upload.sh 读取 GITEE_TOKEN 环境变量，这里映射一下
@@ -94,6 +102,8 @@ stages:
               bash lib/scripts/gitee_release_upload.sh \
                 --repo "${OWNER_REPO:-sakura-fly/PiliPlus}" \
                 --tag "${RELEASE_TAG}" \
+                --name "${RELEASE_TAG}" \
+                --body-file release_notes.md \
                 --commitish "${GITEE_BRANCH:-release}" \
                 --files 'apk/PiliPlus_android_*_arm64-v8a.apk' \
                 --keep 5 || echo "警告：Gitee Release 上传失败（详见上方日志），其余产物不受影响"

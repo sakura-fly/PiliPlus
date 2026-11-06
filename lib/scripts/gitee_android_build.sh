@@ -3,6 +3,7 @@
 # PiliPlus —— Gitee Go Android 打包脚本
 # 由 .workflow/android-pipeline.yml 的 build@gcc 任务调用。
 # 只构建 arm64-v8a（v8a）单 ABI 安装包，用于上传 Gitee Release。
+# 版本号 / pili_release.json / APK 命名与 .github/workflows/build.yml 的 build.ps1 保持一致。
 # 签名密钥由 Gitee 全局参数 KEYGEN_SEED 的前 32 位派生（同一种子=同一签名）。
 # 依赖：build@gcc 执行器（Ubuntu 20.04）+ 网络
 # =============================================================================
@@ -22,7 +23,7 @@ export DEBIAN_FRONTEND=noninteractive
 $SUDO apt-get update -qq
 # 最小化容器常缺 man 目录，会导致 openjdk 的 update-alternatives 安装失败
 $SUDO mkdir -p /usr/share/man/man1 /usr/share/man/man5 /usr/share/man/man6 /usr/share/man/man7 /usr/share/man/man8
-$SUDO apt-get install -y -qq curl wget unzip zip xz-utils git gnupg openjdk-17-jdk-headless
+$SUDO apt-get install -y -qq curl wget unzip zip xz-utils git gnupg python3 openjdk-17-jdk-headless
 
 echo "==> 2/7 安装 PowerShell（项目 patch 脚本需要）"
 if ! command -v pwsh >/dev/null 2>&1; then
@@ -49,10 +50,15 @@ git config --global http.lowSpeedLimit 100
 git config --global http.lowSpeedTime 600
 
 export FLUTTER_ROOT="$HOME/flutter"
-# 版本与 pubspec.yaml 的 flutter 字段保持一致
-FLUTTER_VERSION=3.47.2
-if [ -x "$FLUTTER_ROOT/bin/flutter" ] && git -C "$FLUTTER_ROOT" rev-parse --git-dir >/dev/null 2>&1; then
-  # 命中有效的 Flutter SDK（含可执行文件与 git 元数据），跳过克隆
+# 与 GitHub Actions 的 flutter-version-file: pubspec.yaml 一致：版本取自 pubspec.yaml
+FLUTTER_VERSION=$(sed -nE 's/^[[:space:]]*flutter:[[:space:]]*([0-9][0-9.]*).*/\1/p' pubspec.yaml | head -1)
+FLUTTER_VERSION="${FLUTTER_VERSION:-3.47.5}"
+echo "目标 Flutter 版本：$FLUTTER_VERSION（来自 pubspec.yaml）"
+# 缓存标记：Flutter 版本升级后必须重新克隆，否则会一直复用缓存里的旧 SDK
+CACHE_MARK="$FLUTTER_ROOT/.piliplus_flutter_version"
+if [ -x "$FLUTTER_ROOT/bin/flutter" ] && git -C "$FLUTTER_ROOT" rev-parse --git-dir >/dev/null 2>&1 \
+    && [ "$(cat "$CACHE_MARK" 2>/dev/null || true)" = "$FLUTTER_VERSION" ]; then
+  # 命中有效的 Flutter SDK（含可执行文件、git 元数据与匹配的版本），跳过克隆
   echo "使用已缓存的 Flutter SDK：$FLUTTER_ROOT"
 else
   # 不直接 rm 缓存目录：缓存注入的目录可能被占用/只读，rm 会报 Device or resource busy。
@@ -90,6 +96,8 @@ else
     export FLUTTER_ROOT
   fi
 fi
+# 记录本次使用的 SDK 版本，供下次构建判断缓存是否仍然有效
+printf '%s' "$FLUTTER_VERSION" > "$FLUTTER_ROOT/.piliplus_flutter_version" 2>/dev/null || true
 export PATH="$FLUTTER_ROOT/bin:$PATH"
 # 国内 CI 使用 Flutter 镜像加速 pub 与引擎下载
 export PUB_HOSTED_URL="${PUB_HOSTED_URL:-https://pub.flutter-io.cn}"
@@ -130,15 +138,16 @@ printf 'storeFile=key.jks\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
   "$STORE_PASS" "$ALIAS" "$KEY_PASS" > android/key.properties
 
 echo "==> 5/7 生成版本信息"
+# 与 .github/workflows/build.yml 的 build.ps1 完全一致：
+#   pili.name = versionName（不带 commit hash），pubspec 版本 = versionName+versionCode，
+#   APK 文件名与 Release tag（v<versionName>+<versionCode>）对齐
 VERSION_NAME=$(sed -nE 's/^version:[[:space:]]*([0-9.]+).*/\1/p' pubspec.yaml | head -1)
 VERSION_CODE=$(git rev-list --count HEAD)
 COMMIT_HASH=$(git rev-parse HEAD)
-SHORT_HASH=$(printf '%s' "$COMMIT_HASH" | cut -c1-9)
-ANDROID_VERSION="$VERSION_NAME-$SHORT_HASH"
 printf '{"pili.name":"%s","pili.code":"%s","pili.hash":"%s","pili.time":"%s"}\n' \
-  "$ANDROID_VERSION" "$VERSION_CODE" "$COMMIT_HASH" "$(date +%s)" > pili_release.json
-sed -i -E "s/^version: .*/version: $ANDROID_VERSION+$VERSION_CODE/" pubspec.yaml
-echo "version: $ANDROID_VERSION+$VERSION_CODE"
+  "$VERSION_NAME" "$VERSION_CODE" "$COMMIT_HASH" "$(date +%s)" > pili_release.json
+sed -i -E "s/^version: .*/version: $VERSION_NAME+$VERSION_CODE/" pubspec.yaml
+echo "version: $VERSION_NAME+$VERSION_CODE"
 
 echo "==> 6/7 应用项目补丁"
 export GITHUB_WORKSPACE="$PWD"
@@ -187,7 +196,7 @@ flutter build apk --release --split-per-abi --target-platform android-arm64 \
 mkdir -p apk
 for file in build/app/outputs/flutter-apk/app-*-release.apk; do
   abi=$(echo "$file" | sed -E 's|.*app-(.*)-release\.apk|\1|')
-  mv "$file" "apk/PiliPlus_android_${ANDROID_VERSION}_${abi}.apk"
+  mv "$file" "apk/PiliPlus_android_${VERSION_NAME}+${VERSION_CODE}_${abi}.apk"
 done
 ls -lh apk/PiliPlus_android_*.apk
 echo "构建完成"
